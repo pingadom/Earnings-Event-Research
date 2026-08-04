@@ -1,0 +1,83 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "earnings-event-engine"
+version = "0.1.0"
+description = "Event-study and cross-sectional research engine for post-earnings-announcement abnormal returns."
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "MIT" }
+authors = [{ name = "Aaryan H." }]
+keywords = ["quantitative-finance", "event-study", "earnings", "PEAD", "nlp", "backtesting"]
+
+# Core stays deliberately light: everything in src/earnings_engine/{returns,models,backtest}
+# is implemented on numpy/scipy so the statistical core has no heavyweight dependencies
+# and CI can run hermetically with no network.
+dependencies = [
+    "numpy>=1.24",
+    "pandas>=2.0",
+    "scipy>=1.10",
+    "scikit-learn>=1.3",
+    "matplotlib>=3.7",
+    "PyYAML>=6.0",
+]
+
+[project.optional-dependencies]
+# Live data pulls. Not needed for tests, the demo, or CI.
+data = [
+    "requests>=2.31",
+    "yfinance>=0.2.40",
+    "lxml>=4.9",
+    "beautifulsoup4>=4.12",
+    "pyarrow>=14.0",       # parquet cache; the cache falls back to csv.gz without it
+    "openpyxl>=3.1",       # reading Capital IQ / LSEG Workspace .xlsx exports
+]
+# Optional statistical extras. The engine implements OLS, Newey-West and the BMP
+# test itself; statsmodels is only used by tests that cross-check those results.
+stats = ["statsmodels>=0.14"]
+# Transformer-based text features. Heavy; the dictionary-based text features work without it.
+nlp = ["transformers>=4.40", "torch>=2.2", "sentencepiece>=0.2"]
+dev = ["pytest>=7.4", "pytest-cov>=4.1", "ruff>=0.4", "mypy>=1.8", "ipykernel>=6.29"]
+
+[project.scripts]
+eee = "earnings_engine.cli:main"
+
+[project.urls]
+Homepage = "https://github.com/aaryanh06/earnings-event-engine"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+earnings_engine = ["resources/*.txt", "resources/*.csv"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q --strict-markers"
+markers = [
+    "network: test requires outbound network access (deselected by default in CI)",
+    "slow: test takes more than a few seconds",
+]
+filterwarnings = ["error::FutureWarning"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py310"
+src = ["src", "tests"]
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "UP", "B", "C4", "SIM", "NPY", "PD"]
+ignore = [
+    "B008",
+    "SIM108",  # ternaries are not always clearer
+]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/*" = ["E501"]
+
+[tool.mypy]
+python_version = "3.10"
+ignore_missing_imports = true
+warn_unused_ignores = true

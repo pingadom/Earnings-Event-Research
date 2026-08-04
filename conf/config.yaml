@@ -1,0 +1,74 @@
+# Default configuration. Every key here maps onto a frozen dataclass in
+# earnings_engine/config.py, and an unknown key is a load-time error rather
+# than a silent no-op.
+
+seed: 20260818
+
+paths:
+  data_dir: data
+  vendor_dir: data/vendor
+  reports_dir: reports
+
+universe:
+  name: sp500
+  # Point-in-time index membership: ticker,start_date,end_date,sector
+  # Leave null to take the universe from the provider.
+  membership_file: null
+  # Setting this true permits a survivorship-biased static constituent list.
+  allow_static_membership: false
+  min_price: 5.0
+  min_dollar_volume: 1000000.0
+
+events:
+  exchange_tz: America/New_York
+  # next_open (conservative) | same_day (accepts partial intraday look-ahead)
+  intraday_policy: next_open
+  # amc | bmo | drop
+  unknown_time_policy: amc
+  min_history_days: 150
+
+returns:
+  estimators: [market_adjusted, market_model, sector_neutral]
+  estimation_start: -250
+  estimation_end: -31
+  min_estimation_obs: 100
+  # Windows starting at 0 contain the announcement gap (not tradable from the
+  # t0 open). Windows starting at 1 are the tradable drift.
+  windows: [[0, 0], [0, 4], [0, 19], [1, 5], [1, 20]]
+  market_symbol: SPY
+  winsorize: [0.005, 0.995]
+
+features:
+  fundamentals: true
+  surprise: true
+  text: true
+  # rank_gauss | zscore | rank | none
+  cross_sectional_transform: rank_gauss
+  # Point at the full Loughran-McDonald master dictionary CSV if you have it.
+  lm_dictionary_path: null
+
+model:
+  kind: ridge          # ols | ridge | elasticnet | random_forest | gbm
+  # Always a drift window. Targeting a 0-start window books the announcement
+  # jump as predictable profit, which it is not.
+  target: car_market_model_1_20
+  initial_train_years: 6
+  validation_years: 1
+  step_years: 1
+  # Must be >= the longest label horizon, or overlapping labels leak.
+  embargo_days: 25
+  random_state: 20260818
+
+backtest:
+  # Enter one session after t0: the gap is gone by the time you can trade.
+  entry_offset: 1
+  holding_days: 20
+  quantiles: 5
+  sector_neutral: true
+  gross_exposure: 1.0
+  max_weight: 0.02
+  costs:
+    half_spread_bps: 3.0
+    commission_bps: 0.5
+    impact_coef_bps: 10.0
+    participation: 0.05
