@@ -21,7 +21,7 @@ from .providers.stooq import StooqProvider
 from .providers.yahoo import YahooProvider
 from .schemas import EARNINGS_COLUMNS, FILING_COLUMNS, FUNDAMENTAL_COLUMNS, PRICE_COLUMNS
 from .sec_download import SecConfigurationError, SecDownloader
-from .storage import SymbolCache, write_json_atomic, write_parquet_atomic
+from .storage import SymbolCache, read_table, table_path, write_json_atomic, write_parquet_atomic
 from .validation import ValidationReport, validate_directory
 
 log = logging.getLogger(__name__)
@@ -76,7 +76,7 @@ def _output_price_frame(frame: pd.DataFrame, source: str) -> pd.DataFrame:
 def _existing(path: Path, columns: tuple[str, ...] | None = None) -> pd.DataFrame:
     if path.exists():
         try:
-            return pd.read_parquet(path)
+            return read_table(path)
         except Exception as exc:
             log.warning("could not reuse %s: %s", path, exc)
     return pd.DataFrame(columns=columns)
@@ -331,7 +331,7 @@ def run_acquisition(config: AcquisitionConfig, *, validate_only: bool = False) -
         retries=4,
         backoff=1.0,
     )
-    membership_path = config.raw_dir / "index_membership.parquet"
+    membership_path = table_path(config.raw_dir / "index_membership.parquet")
     if "membership" in config.datasets or not config.tickers:
         membership = download_sp500_membership(public_client, force=config.force)
         outputs["index_membership"] = write_parquet_atomic(membership, membership_path)
@@ -349,7 +349,7 @@ def run_acquisition(config: AcquisitionConfig, *, validate_only: bool = False) -
     if "prices" in config.datasets:
         new, successful, stage_failures = _download_price_symbols(tickers, config, "prices")
         failures.extend(stage_failures)
-        path = config.raw_dir / "prices.parquet"
+        path = table_path(config.raw_dir / "prices.parquet")
         merged = _replace_window(
             _existing(path, PRICE_COLUMNS),
             new,
@@ -367,7 +367,7 @@ def run_acquisition(config: AcquisitionConfig, *, validate_only: bool = False) -
         failures.extend(stage_failures)
         if not new.empty:
             new["benchmark_name"] = new["ticker"].map(BENCHMARKS)
-        path = config.raw_dir / "benchmarks.parquet"
+        path = table_path(config.raw_dir / "benchmarks.parquet")
         merged = _replace_window(
             _existing(path, PRICE_COLUMNS),
             new,
@@ -379,8 +379,8 @@ def run_acquisition(config: AcquisitionConfig, *, validate_only: bool = False) -
         )
         outputs["benchmarks"] = write_parquet_atomic(merged, path)
 
-    filings_path = config.raw_dir / "sec_filings.parquet"
-    facts_path = config.raw_dir / "fundamentals.parquet"
+    filings_path = table_path(config.raw_dir / "sec_filings.parquet")
+    facts_path = table_path(config.raw_dir / "fundamentals.parquet")
     if "sec" in config.datasets:
         filings, facts, successful, stage_failures = _download_sec(tickers, config)
         failures.extend(stage_failures)
@@ -415,7 +415,7 @@ def run_acquisition(config: AcquisitionConfig, *, validate_only: bool = False) -
             tickers, config, available_filings
         )
         failures.extend(stage_failures)
-        path = config.raw_dir / "earnings.parquet"
+        path = table_path(config.raw_dir / "earnings.parquet")
         merged = _replace_window(
             _existing(path, EARNINGS_COLUMNS),
             earnings,
@@ -431,7 +431,7 @@ def run_acquisition(config: AcquisitionConfig, *, validate_only: bool = False) -
         factors = download_fama_french_daily(
             public_client, config.start, config.end, force=config.force
         )
-        path = config.raw_dir / "fama_french_daily.parquet"
+        path = table_path(config.raw_dir / "fama_french_daily.parquet")
         existing = _existing(path)
         if not existing.empty:
             dates = pd.to_datetime(existing["date"], errors="coerce")

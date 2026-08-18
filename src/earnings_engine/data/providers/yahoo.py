@@ -14,6 +14,8 @@ Use it for development. Use Capital IQ / LSEG for anything you would report.
 
 from __future__ import annotations
 
+import time
+
 import pandas as pd
 
 from ...utils.frames import EVENTS, PRICES
@@ -22,6 +24,64 @@ from ..base import ProviderError
 from ..registry import register
 
 log = get_logger(__name__)
+
+
+CHART_URL = "https://query1.finance.yahoo.com/v8/finance/chart/{ticker}"
+
+
+def _chart_prices(ticker: str, start, end, session=None) -> pd.DataFrame:
+    """Daily bars straight from Yahoo's chart endpoint, no yfinance required.
+
+    ``yfinance`` is a convenience wrapper over this endpoint plus a lot of
+    scraping we do not use. Calling it directly removes an unofficial
+    dependency from the price path, and it is the same data.
+    """
+    import requests  # noqa: PLC0415
+
+    params = {
+        "period1": int(pd.Timestamp(start).timestamp()),
+        "period2": int((pd.Timestamp(end) + pd.Timedelta(days=1)).timestamp()),
+        "interval": "1d",
+        "events": "div,splits",
+    }
+    headers = {"User-Agent": "Mozilla/5.0 (compatible; earnings-event-engine research)"}
+    resp = (session or requests).get(
+        CHART_URL.format(ticker=ticker), params=params, headers=headers, timeout=30
+    )
+    if resp.status_code == 404:
+        raise ProviderError(f"yahoo has no chart data for {ticker!r}")
+    resp.raise_for_status()
+    payload = resp.json().get("chart", {})
+    if payload.get("error"):
+        raise ProviderError(f"yahoo error for {ticker!r}: {payload['error']}")
+    results = payload.get("result") or []
+    if not results:
+        raise ProviderError(f"yahoo returned no result block for {ticker!r}")
+
+    node = results[0]
+    stamps = node.get("timestamp") or []
+    if not stamps:
+        raise ProviderError(f"yahoo returned no bars for {ticker!r}")
+    quote = node["indicators"]["quote"][0]
+    adj = node["indicators"].get("adjclose", [{}])[0].get("adjclose")
+
+    frame = pd.DataFrame(
+        {
+            "ticker": ticker,
+            # Yahoo stamps each bar at the exchange open; normalise to the date.
+            "date": pd.to_datetime(stamps, unit="s", utc=True)
+            .tz_convert("America/New_York")
+            .normalize()
+            .tz_localize(None),
+            "open": quote.get("open"),
+            "high": quote.get("high"),
+            "low": quote.get("low"),
+            "close": quote.get("close"),
+            "adj_close": adj if adj is not None else quote.get("close"),
+            "volume": quote.get("volume"),
+        }
+    )
+    return frame.dropna(subset=["adj_close"]).reset_index(drop=True)
 
 
 def _require_yfinance():
@@ -45,7 +105,16 @@ class YahooProvider:
         self.auto_adjust = auto_adjust
 
     def get_prices(self, tickers, start, end) -> pd.DataFrame:
-        yf = _require_yfinance()
+        """Daily adjusted prices.
+
+        Uses ``yfinance`` when it is installed and falls back to Yahoo's chart
+        endpoint otherwise -- same data, one fewer dependency.
+        """
+        try:
+            yf = _require_yfinance()
+        except ProviderError:
+            log.info("yfinance not installed; using the Yahoo chart endpoint directly")
+            return self._get_prices_direct(tickers, start, end)
         frames = []
         for i in range(0, len(tickers), self.batch_size):
             batch = list(tickers[i : i + self.batch_size])
@@ -65,6 +134,27 @@ class YahooProvider:
             frames.append(self._tidy(raw, batch))
         if not frames:
             raise ProviderError("yahoo returned no price data for the requested tickers")
+        return PRICES.validate(pd.concat(frames, ignore_index=True))
+
+    def _get_prices_direct(self, tickers, start, end) -> pd.DataFrame:
+        import requests  # noqa: PLC0415
+
+        session = requests.Session()
+        frames, failed = [], []
+        for i, ticker in enumerate(tickers, 1):
+            try:
+                frames.append(_chart_prices(ticker, start, end, session))
+            except Exception as exc:
+                failed.append(ticker)
+                log.warning("yahoo: %s failed (%s)", ticker, exc)
+            if i % 25 == 0:
+                log.info("yahoo: %d/%d symbols", i, len(tickers))
+            time.sleep(0.12)  # be polite to an endpoint that owes us nothing
+        if not frames:
+            raise ProviderError("yahoo returned no price data for the requested tickers")
+        if failed:
+            log.warning("yahoo: %d/%d symbols unavailable: %s",
+                        len(failed), len(tickers), ", ".join(failed[:12]))
         return PRICES.validate(pd.concat(frames, ignore_index=True))
 
     def _tidy(self, raw: pd.DataFrame, tickers: list[str]) -> pd.DataFrame:

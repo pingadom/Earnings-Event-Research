@@ -9,6 +9,7 @@ import pandas as pd
 from ...utils.frames import EVENTS, FILINGS, FUNDAMENTALS, PRICES, UNIVERSE
 from ..base import ProviderError
 from ..registry import register
+from ..storage import read_table, table_path
 
 
 def conservative_unknown_timestamp(date_value) -> pd.Timestamp:
@@ -82,13 +83,13 @@ class LocalProvider:
         self.text_dir = self.raw_dir / "sec_filing_text"
 
     def _load(self, name: str) -> pd.DataFrame:
-        path = self.raw_dir / f"{name}.parquet"
+        path = table_path(self.raw_dir / f"{name}.parquet")
         if not path.exists():
             raise ProviderError(
                 f"offline dataset missing: {path}. Run python scripts/download_data.py first; "
                 "the local provider never falls back to synthetic data."
             )
-        return pd.read_parquet(path)
+        return read_table(path)
 
     def get_universe(self) -> pd.DataFrame:
         frame = self._load("index_membership").copy()

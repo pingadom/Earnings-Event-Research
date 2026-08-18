@@ -1,4 +1,10 @@
-"""Atomic Parquet storage and small per-symbol caches for acquisition jobs."""
+"""Atomic columnar storage and small per-symbol caches for acquisition jobs.
+
+Parquet is used when an engine (pyarrow or fastparquet) is installed and
+gzipped CSV otherwise, so acquisition works in a minimal environment. The choice
+is made once, at import, and applies to reads and writes alike -- a directory
+holding both formats would be worse than either.
+"""
 
 from __future__ import annotations
 
@@ -12,18 +18,52 @@ from typing import Any
 import pandas as pd
 
 
+def _parquet_available() -> bool:
+    for engine in ("pyarrow", "fastparquet"):
+        try:
+            __import__(engine)
+            return True
+        except ImportError:
+            continue
+    return False
+
+
+PARQUET = _parquet_available()
+#: Extension used for every columnar dataset written by the acquisition layer.
+TABLE_SUFFIX = ".parquet" if PARQUET else ".csv.gz"
+
+
+def table_path(path: str | Path) -> Path:
+    """Rewrite a ``.parquet`` path to whatever format is actually available."""
+    p = Path(path)
+    if p.suffix == ".parquet" and not PARQUET:
+        return p.with_suffix(".csv.gz")
+    return p
+
+
+def read_table(path: str | Path) -> pd.DataFrame:
+    """Read a dataset written by :func:`write_parquet_atomic`."""
+    p = table_path(path)
+    if p.suffix == ".parquet":
+        return pd.read_parquet(p)
+    return pd.read_csv(p, low_memory=False)
+
+
 def safe_symbol(value: str) -> str:
     """Return a reversible-enough filename component for a market symbol."""
     return "".join(ch if ch.isalnum() or ch in "-._" else "_" for ch in value.upper())
 
 
 def write_parquet_atomic(frame: pd.DataFrame, path: str | Path) -> Path:
-    """Write a Parquet file without exposing a half-written final file."""
-    destination = Path(path)
+    """Write a dataset without ever exposing a half-written final file."""
+    destination = table_path(path)
     destination.parent.mkdir(parents=True, exist_ok=True)
     temporary = destination.with_name(f".{destination.name}.{os.getpid()}.tmp")
     try:
-        frame.to_parquet(temporary, index=False)
+        if destination.suffix == ".parquet":
+            frame.to_parquet(temporary, index=False)
+        else:
+            frame.to_csv(temporary, index=False, compression="gzip")
         temporary.replace(destination)
     finally:
         temporary.unlink(missing_ok=True)
@@ -62,7 +102,7 @@ class SymbolCache:
         return self.root / self.namespace
 
     def frame_path(self, symbol: str) -> Path:
-        return self.directory / f"{safe_symbol(symbol)}.parquet"
+        return self.directory / f"{safe_symbol(symbol)}{TABLE_SUFFIX}"
 
     def meta_path(self, symbol: str) -> Path:
         return self.directory / f"{safe_symbol(symbol)}.meta.json"
@@ -72,7 +112,7 @@ class SymbolCache:
         if not path.exists():
             return None
         try:
-            return pd.read_parquet(path)
+            return read_table(path)
         except Exception:
             return None
 

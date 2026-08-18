@@ -9,6 +9,8 @@ from typing import Any
 
 import pandas as pd
 
+from .storage import read_table, table_path
+
 
 @dataclass(frozen=True)
 class ValidationIssue:
@@ -131,9 +133,9 @@ def validate_directory(raw_dir: str | Path) -> tuple[dict[str, pd.DataFrame], Va
         "index_membership",
     )
     frames = {
-        name: pd.read_parquet(root / f"{name}.parquet")
+        name: read_table(table_path(root / f"{name}.parquet"))
         for name in names
-        if (root / f"{name}.parquet").exists()
+        if (table_path(root / f"{name}.parquet")).exists()
     }
     report = validate_frames(frames)
     if not frames:
@@ -278,13 +280,45 @@ def _validate_fundamentals(frame: pd.DataFrame, report: ValidationReport) -> Non
             "availability_before_period",
             f"{int(before_period.sum())} availability timestamps predate period end",
         )
-    before_filing = available.dt.tz_localize(None).dt.normalize() < filed
-    if before_filing.any():
+    # `available_from_utc` legitimately precedes `filing_date` for after-hours
+    # filings, and comparing the two naively raises a false alarm on roughly a
+    # sixth of all rows.
+    #
+    # EDGAR dates a submission accepted after 17:30 ET to the next BUSINESS day,
+    # while `acceptanceDateTime` records when it actually became public. Apple's
+    # FY2019 10-K was accepted at 18:12 ET on Wednesday 30 October 2019 and
+    # carries a filingDate of the 31st; a Friday evening filing carries the
+    # following Monday. The acceptance timestamp is the earlier and more
+    # accurate fact, and using it is the whole reason this pipeline can claim
+    # point-in-time discipline.
+    #
+    # So the test is not "availability >= filing date" and not a fixed slack
+    # either. It is: if availability precedes the filing date, the acceptance
+    # must have been after 17:30 Eastern -- the only thing that produces the
+    # shift. Anything else is a real look-ahead and stays an error.
+    eastern = available.dt.tz_convert("America/New_York")
+    minutes = eastern.dt.hour * 60 + eastern.dt.minute
+    cutoff = 17 * 60 + 30
+    early = eastern.dt.normalize().dt.tz_localize(None) < filed
+    explained = early & (minutes >= cutoff)
+    unexplained = early & (minutes < cutoff)
+
+    if unexplained.any():
         report.add(
             "error",
             "fundamentals",
             "availability_before_filing",
-            f"{int(before_filing.sum())} observations become available before filing date",
+            f"{int(unexplained.sum())} observations became available before their filing date "
+            f"without an after-hours acceptance to explain it",
+        )
+    if explained.any():
+        report.add(
+            "info",
+            "fundamentals",
+            "after_hours_acceptance",
+            f"{int(explained.sum())} observations were accepted by EDGAR after 17:30 ET and so "
+            f"carry a filing date on a later business day. The acceptance timestamp is used, "
+            f"which is both correct and slightly conservative.",
         )
 
 
