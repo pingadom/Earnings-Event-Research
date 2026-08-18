@@ -1,5 +1,12 @@
 # earnings-event-engine
 
+[![CI](https://github.com/pingadom/Earnings-Event-Research/actions/workflows/ci.yml/badge.svg)](https://github.com/pingadom/Earnings-Event-Research/actions/workflows/ci.yml)
+[![Dashboard](https://img.shields.io/badge/dashboard-live-0b6bcb)](https://pingadom.github.io/Earnings-Event-Research/)
+[![Python](https://img.shields.io/badge/python-3.10%20%7C%203.12-blue)](https://www.python.org/)
+[![License: MIT](https://img.shields.io/badge/license-MIT-green)](LICENSE)
+[![Reproducible](https://img.shields.io/badge/results-hash--verified-brightgreen)](scripts/reproduce.py)
+
+
 **Does the information in an earnings release predict the *abnormal* return that
 follows it?**
 
@@ -197,10 +204,15 @@ src/earnings_engine/
   backtest/                 sector-neutral book, costs, performance
   reporting/                figures and the run report
   holdout.py                rolling annual holdouts: train Y-1, freeze, predict Y
+  analysis/attribution.py   alpha vs Fama-French 5 + momentum, Newey-West
+  analysis/multiple_testing.py  probabilistic & deflated Sharpe, trials log
+  analysis/fama_macbeth.py  cross-sectional regressions, second methodology
   reporting/dashboard.py    self-contained interactive HTML, no dependencies
-  cli.py                    eee demo | holdout | ingest | event-study | research
-tests/                      125 tests, offline, including leak regressions
+  cli.py                    eee demo | holdout | download | event-study | research
+tests/                      162 tests, offline, including leak regressions
 docs/results.md             the holdout evidence, with its null control
+docs/manifest.json          SHA-256 of every published artefact
+scripts/reproduce.py        make reproduce | make verify
 docs/                       methodology, biases, data sources, decision records
 ```
 
@@ -221,6 +233,15 @@ that grid makes it obvious. `eee research` additionally reports:
   a high average IC driven by three good quarters is not a strategy;
 - **calibration** — predicted magnitudes against realised ones. A signal can rank
   correctly and still be badly scaled, and position sizing depends on which;
+- **factor attribution** — alpha and its HAC t-statistic against Fama–French 5
+  plus momentum, so "is this just momentum?" has an answer in the repo rather
+  than in the interview;
+- **multiple testing** — a committed log of every specification tried, and the
+  deflated Sharpe ratio it implies. When the trial dispersion cannot be
+  estimated the code says so instead of guessing;
+- **Fama–MacBeth** — the same question by cross-sectional regression. Two
+  methods agreeing is much harder to dismiss than one; where they disagree,
+  [`results.md` §5d](docs/results.md) explains why;
 - gross **and** net equity curves;
 - a cost-sensitivity curve answering "how wrong would my cost assumption have to
   be for this edge to disappear?", which converts an unverifiable assumption
@@ -348,7 +369,7 @@ precise Yahoo release times, all delisted-company prices, or licensed
 point-in-time sector classifications. Filing bodies are not bulk-downloaded by
 default because multi-decade 10-K/10-Q text is very large; offline real-data
 runs therefore skip text features explicitly unless local filing text has been
-provided. See [DATA_SOURCES.md](DATA_SOURCES.md) for endpoint-level coverage and
+provided. See [docs/data_sources.md](docs/data_sources.md) for endpoint-level coverage and
 limitations.
 
 ## Licence
