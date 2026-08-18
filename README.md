@@ -1,7 +1,8 @@
 # earnings-event-engine
 
 [![CI](https://github.com/pingadom/Earnings-Event-Research/actions/workflows/ci.yml/badge.svg)](https://github.com/pingadom/Earnings-Event-Research/actions/workflows/ci.yml)
-[![Dashboard](https://img.shields.io/badge/dashboard-live-0b6bcb)](https://pingadom.github.io/Earnings-Event-Research/)
+[![Explainer](https://img.shields.io/badge/explainer-live-0b6bcb)](https://pingadom.github.io/Earnings-Event-Research/)
+[![Dashboard](https://img.shields.io/badge/dashboard-live-2a78d6)](https://pingadom.github.io/Earnings-Event-Research/dashboard.html)
 [![Python](https://img.shields.io/badge/python-3.10%20%7C%203.12-blue)](https://www.python.org/)
 [![License: MIT](https://img.shields.io/badge/license-MIT-green)](LICENSE)
 [![Reproducible](https://img.shields.io/badge/results-hash--verified-brightgreen)](scripts/reproduce.py)
@@ -27,7 +28,11 @@ universe → prices/events/fundamentals/filings
          → sector-neutral long/short book → transaction costs → evaluation
 ```
 
-### [→ Results](docs/results.md)
+### [→ Plain-English explainer](https://pingadom.github.io/Earnings-Event-Research/) · [→ Technical dashboard](https://pingadom.github.io/Earnings-Event-Research/dashboard.html) · [→ Full results](docs/results.md)
+
+If you want to know what this found without reading a methods section, start
+with the explainer. It is generated from the same run artefacts as everything
+else, so it cannot disagree with them.
 
 **The headline is a null.** 114 S&P 500 companies, **3,323 real earnings
 announcements** timestamped from SEC filings, held out one year at a time

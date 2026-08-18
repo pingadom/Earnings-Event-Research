@@ -63,6 +63,30 @@ price sources generally do not carry delisting returns; CRSP does. Where they
 are unavailable, the honest move is to say so and note the direction of the bias
 (it flatters long portfolios).
 
+**Measured, not asserted, in this repository.** The point-in-time universe is
+built correctly, so the *membership* is unbiased. The prices are not. Of the
+names the membership table says were deleted from the index during the sample,
+61% could not be retrieved from Yahoo at all, against 5% of the names that
+survived — a twelvefold difference, and precisely the wrong twelve. Silicon
+Valley Bank and First Republic are both absent: two firms whose earnings
+disclosures were followed by exactly the kind of move this study is trying to
+detect.
+
+Two escape routes were attempted and both are closed from a free source:
+
+* Yahoo's chart endpoint returns `404 — symbol may be delisted` for every one
+  of them, and for a handful of names that are demonstrably still trading, so
+  its coverage is not even reliably a function of delisting.
+* Stooq, the configured fallback, now answers automated requests with a
+  JavaScript proof-of-work challenge. That is a deliberate statement about
+  automated access, and this project does not defeat it.
+
+So the bias is quantified, its direction is known — it flatters the results —
+and the fix is named rather than improvised: a price source with delisting
+coverage. CRSP through a university subscription, or Finaeon. Until then this
+is the limitation that would most change the answer, and it is stated in the
+results rather than left for a reader to discover.
+
 ---
 
 ## 3. The untradable announcement gap

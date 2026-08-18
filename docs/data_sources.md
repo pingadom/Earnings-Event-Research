@@ -16,10 +16,11 @@ Everything below is produced by `eee download` and validated by
 | Dataset | Source | Coverage | Update method | Known limitations |
 |---|---|---|---|---|
 | Equity prices | Yahoo Finance via `yfinance` | Requested window; availability varies by symbol | Per-symbol incremental Parquet cache | Unofficial API; delisted/renamed symbols are often unavailable; adjusted close reflects the currently known corporate-action history |
-| Price fallback | Stooq CSV endpoint | Requested window when Yahoo returns no usable symbol history | Whole-symbol fallback, logged and labelled `source=stooq` | The endpoint has no separate total-return adjusted-close field, so `adjusted_close=close` is explicit and must not be treated as verified dividend adjustment |
+| Price fallback | Stooq CSV endpoint | Requested window when Yahoo returns no usable symbol history | Whole-symbol fallback, logged and labelled `source=stooq` | **Currently unusable.** As of August 2026 the endpoint answers with a JavaScript proof-of-work challenge rather than CSV, so automated access is refused by design and this project does not attempt to defeat it. Even when reachable the endpoint has no separate total-return adjusted-close field, so `adjusted_close=close` is explicit and must not be treated as verified dividend adjustment. Run with `--no-stooq-fallback` to skip it |
 | Earnings | Yahoo `get_earnings_dates` plus SEC 8-K Item 2.02 | Yahoo usually exposes up to 100 events; SEC coverage depends on 8-K tagging | Per-symbol Yahoo cache; SEC acceptance-time reconciliation | Yahoo dates/times and analyst fields are incomplete; revenue estimates are usually absent; an Item 2.02 filing can lag the actual release |
-| Fundamentals | SEC Company Facts/XBRL | Primarily 2009 onward; issuer/concept dependent | Sequential `data.sec.gov` pulls with cache, retries, and 8 req/s cap | Concept heterogeneity; quarterly cash-flow facts are often year-to-date; foreign/private issuers vary |
-| Filing provenance | SEC submissions API and EDGAR Archives metadata | SEC filing history available through current and older submission shards | Sequential cached pull | Filing bodies are not bulk-downloaded by default; `sec_filings.parquet` stores URLs/accessions and precise acceptance timestamps where supplied |
+| Fundamentals | SEC Company Facts/XBRL | Primarily 2009 onward; issuer/concept dependent | Sequential `data.sec.gov` pulls with cache, retries, and 8 req/s cap | Concept heterogeneity; foreign/private issuers vary. Year-to-date flow facts are differenced into discrete quarters (see below) rather than dropped, but a firm that tags neither a quarterly nor a differenceable cumulative value is simply missing that quarter |
+| Filing provenance | SEC submissions API and EDGAR Archives metadata | SEC filing history available through current and older submission shards | Sequential cached pull | `sec_filings.parquet` stores URLs/accessions and precise acceptance timestamps where supplied |
+| Earnings release text | EDGAR Archives, exhibit 99.1 of each Item 2.02 8-K | Every earnings 8-K in the filings table | `eee download --text-only`; gzipped plain text under `data/raw/sec_filing_text/` | Exhibit numbering is a convention, not a rule -- a filer who puts the release somewhere other than a 99-series exhibit falls back to the primary document; releases shorter than 400 characters are rejected as cover pages rather than cached as content |
 | Fama-French | Kenneth French Data Library daily ZIP files | Library history through its latest published date | Cached ZIP download; `--force-refresh` updates | Publication can lag the latest equity session; factor values are converted from percent to decimal |
 | Benchmarks | Yahoo Finance (`SPY`, `^GSPC`) | Requested window | Same resumable price mechanism | `SPY` is the practical total-return proxy; `^GSPC` is a price index, not a total-return series |
 | S&P 500 membership | `fja05680/sp500` on raw.githubusercontent.com | Reconstructed intervals from 1996 | Download `sp500_ticker_start_end.csv`; current metadata from `sp500.csv` | Community reconstruction, not an official S&P product; early years may be incomplete; current sector metadata is not a point-in-time sector history |
@@ -31,7 +32,7 @@ Everything below is produced by `eee download` and validated by
 - `https://data.sec.gov/submissions/`
 - `https://data.sec.gov/api/xbrl/companyfacts/`
 - `https://www.sec.gov/files/company_tickers.json`
-- `https://www.sec.gov/Archives/edgar/data/` (provenance URLs only)
+- `https://www.sec.gov/Archives/edgar/data/` (provenance URLs, filing index pages and release exhibits)
 - `https://mba.tuck.dartmouth.edu/pages/faculty/ken.french/ftp/`
 - `https://raw.githubusercontent.com/fja05680/sp500/master/`
 
@@ -186,3 +187,39 @@ eee vendor-check --provider capitaliq
 
 Nothing under `data/` is committed. Vendor data is licensed; check your terms
 before it leaves your machine, and never push it to a public repository.
+
+
+## Year-to-date flows and how they become quarters
+
+A 10-Q reports income and cash-flow items *cumulatively*. The Q2 filing states
+six months of operating cash flow, the Q3 filing nine, and the 10-K twelve; only
+Q1 is naturally a single quarter. Reading only the facts whose duration is near
+ninety days therefore discards three quarters in four, which is how operating
+cash flow arrived at 20% coverage while the balance sheet had 40%.
+
+Worse than the missing rows was the mixture left behind. Annual figures from the
+10-K entered the same column as quarterly figures from the 10-Q, so a level such
+as free cash flow was four times larger every fourth row.
+
+`earnings_engine.data.quarterise` resolves both. Within a fiscal year, facts
+sharing a start date form a nested sequence, and the discrete quarter is the
+difference between consecutive members:
+
+    Q2 = H1 - Q1        Q3 = 9M - H1        Q4 = FY - 9M
+
+Three properties are enforced rather than assumed:
+
+* **A derived quarter is stamped with the later of its two inputs' filing
+  dates.** It was not knowable before both halves were public. Where the
+  ordering is reversed by an out-of-sequence restatement, the quarter is
+  dropped rather than guessed at.
+* **Where a window was reported more than once, the first published value
+  wins.** A backtest may only ever see what the market saw.
+* **A natively tagged quarter always outranks a derived one.** Differencing is
+  a fallback, and the provenance records which path produced every value.
+
+Differencing is exact for anything that sums over time. It is an approximation
+for per-share figures, because the weighted-average share count in the
+denominator drifts between quarters -- the same convention Compustat uses for
+fourth-quarter earnings per share. Values reached that way carry
+`"approximate": true` in their provenance.

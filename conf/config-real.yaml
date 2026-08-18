@@ -2,12 +2,13 @@
 #
 # Differences from conf/config.yaml, and why:
 #
-#   features.text: false
-#       Filing *bodies* are not bulk-downloaded by default -- sec_filings only
-#       carries accessions and URLs. Rather than let every text feature come
-#       back NaN and quietly weaken the model, the text block is switched off
-#       and its absence is stated. Acquire the bodies and turn this back on to
-#       test the other half of the hypothesis.
+#   features.text: true
+#       The corpus is the press release behind each Item 2.02 8-K, acquired by
+#       `eee download --text-only`. That document, not the 10-Q, is what the
+#       question about management language is actually about: it is public at
+#       the moment the event window opens, whereas the 10-Q arrives weeks
+#       later. If the bodies have not been acquired the provider raises rather
+#       than silently returning NaN features, so a missing corpus is loud.
 #
 #   model.initial_train_years: 4
 #       The sample starts 2014-06, so the first holdout year (2019) has about
@@ -52,7 +53,7 @@ returns:
 features:
   fundamentals: true
   surprise: true
-  text: false
+  text: true
   cross_sectional_transform: rank_gauss
   lm_dictionary_path: null
 
