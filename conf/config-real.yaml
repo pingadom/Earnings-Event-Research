@@ -1,0 +1,79 @@
+# Configuration for the real-data study.
+#
+# Differences from conf/config.yaml, and why:
+#
+#   features.text: false
+#       Filing *bodies* are not bulk-downloaded by default -- sec_filings only
+#       carries accessions and URLs. Rather than let every text feature come
+#       back NaN and quietly weaken the model, the text block is switched off
+#       and its absence is stated. Acquire the bodies and turn this back on to
+#       test the other half of the hypothesis.
+#
+#   model.initial_train_years: 4
+#       The sample starts 2014-06, so the first holdout year (2019) has about
+#       four and a half years of resolved history to train on.
+#
+#   universe.min_dollar_volume / min_price
+#       Real large caps, so these bind on very few names -- but they exist so
+#       that a delisted stock trading at 30 cents cannot enter the book.
+
+seed: 20260818
+
+paths:
+  data_dir: data
+  vendor_dir: data/vendor
+  reports_dir: reports
+
+universe:
+  name: sp500_pit
+  # Point-in-time membership comes from the provider (index_membership), which
+  # carries join and leave dates, so deleted names are present for the period
+  # they were actually in the index.
+  membership_file: null
+  allow_static_membership: false
+  min_price: 5.0
+  min_dollar_volume: 1000000.0
+
+events:
+  exchange_tz: America/New_York
+  intraday_policy: next_open
+  unknown_time_policy: amc
+  min_history_days: 150
+
+returns:
+  estimators: [market_adjusted, market_model, sector_neutral]
+  estimation_start: -250
+  estimation_end: -31
+  min_estimation_obs: 100
+  windows: [[0, 0], [0, 4], [0, 19], [1, 5], [1, 20]]
+  market_symbol: SPY
+  winsorize: [0.005, 0.995]
+
+features:
+  fundamentals: true
+  surprise: true
+  text: false
+  cross_sectional_transform: rank_gauss
+  lm_dictionary_path: null
+
+model:
+  kind: ridge
+  target: car_market_model_1_20
+  initial_train_years: 4
+  validation_years: 1
+  step_years: 1
+  embargo_days: 25
+  random_state: 20260818
+
+backtest:
+  entry_offset: 1
+  holding_days: 20
+  quantiles: 5
+  sector_neutral: true
+  gross_exposure: 1.0
+  max_weight: 0.02
+  costs:
+    half_spread_bps: 3.0
+    commission_bps: 0.5
+    impact_coef_bps: 10.0
+    participation: 0.05
