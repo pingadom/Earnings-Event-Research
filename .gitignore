@@ -1,18 +1,17 @@
-# --- data: never commit vendor data, it is licensed ---
-data/raw/**
-data/interim/**
-data/processed/**
-data/vendor/**
+# --- data: licensed and/or large. Never committed. -------------------------
+# Note the single-star patterns: git cannot re-include a file whose parent
+# directory has been excluded, so `data/vendor/**` would make the negations
+# below silently useless.
+data/raw/*
+data/interim/*
+data/processed/*
+data/vendor/*/*
 !data/**/.gitkeep
-!data/vendor/README.md
-!data/vendor/schemas/**
+!data/vendor/schemas/*
 
 # outputs
-reports/**
+reports/*
 !reports/.gitkeep
-*.png
-*.pdf
-!docs/**/*.png
 
 # python
 __pycache__/
