@@ -65,6 +65,7 @@ def assemble_features(
     join_keys: dict[str, list[str] | str] | None = None,
     sector_map: dict[str, str] | None = None,
     validate: bool = True,
+    min_coverage: float = 0.02,
 ) -> pd.DataFrame:
     """Join feature blocks onto aligned events under point-in-time discipline.
 
@@ -94,6 +95,7 @@ def assemble_features(
         if spec == "asof":
             panel = _asof_join(panel, block, name)
             stamps.append(f"available_from_{name}")
+            _require_coverage(panel, block, name, min_coverage)
             continue
 
         keys = spec
@@ -116,6 +118,7 @@ def assemble_features(
                 f"the join keys {keys} are not unique in that block"
             )
         stamps.append(stamp_col)
+        _require_coverage(panel, b, name, min_coverage, stamp=stamp_col)
 
         # Anything published after the open is not knowable: blank the whole
         # block for that event rather than keeping a half-filled row.
@@ -142,6 +145,43 @@ def assemble_features(
         assert_point_in_time(check, label="assembled feature panel")
 
     return panel
+
+
+def _require_coverage(
+    panel: pd.DataFrame,
+    block: pd.DataFrame,
+    name: str,
+    minimum: float,
+    stamp: str | None = None,
+) -> None:
+    """Fail loudly when a join matched (almost) nothing.
+
+    A join that matches no rows is indistinguishable, downstream, from a block
+    of features with no predictive content: every value is NaN, the imputer
+    fills them, and the model returns a coefficient of exactly zero. Nothing
+    raises. This happened here -- text features were keyed on
+    ``(ticker, period_end)`` and an 8-K carries no fiscal period end, so an
+    entire feature family was silently absent from the study while appearing in
+    every table of coefficients.
+
+    The threshold is deliberately near zero. This is not a quality check on
+    coverage, which is legitimately patchy for XBRL concepts; it is a check that
+    the join keys refer to the same thing at all.
+    """
+    stamp = stamp or f"available_from_{name}"
+    if stamp not in panel.columns:
+        return
+    matched = float(panel[stamp].notna().mean()) if len(panel) else 0.0
+    if matched >= minimum:
+        log.info("block %r matched %.1f%% of events", name, matched * 100)
+        return
+    raise ValueError(
+        f"feature block {name!r} matched {matched:.2%} of {len(panel)} events "
+        f"(block has {len(block)} rows). A join this empty is a key mismatch, not "
+        f"sparse data: every feature in the block would be NaN and every "
+        f"coefficient exactly zero, with nothing raised. Check that the block and "
+        f"the events agree on what they are keyed by."
+    )
 
 
 def _asof_join(panel: pd.DataFrame, block: pd.DataFrame, name: str) -> pd.DataFrame:

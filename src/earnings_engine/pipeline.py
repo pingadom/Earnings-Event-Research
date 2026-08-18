@@ -145,11 +145,14 @@ def build_feature_panel(
             dataset.filings, dataset.text_loader, config.features.lm_dictionary_path
         )
 
-    # Fundamentals and surprise attach by publication time, not by period_end:
-    # against real SEC data the two calendars do not agree and a key-based join
-    # silently matches nothing. Text stays keyed, since a filing is tied to the
-    # event that produced it.
-    join_keys = {name: "asof" for name in ("fund", "sue") if name in blocks}
+    # Every block attaches by publication time, not by period_end. Against real
+    # SEC data the two calendars do not agree and a key-based join silently
+    # matches nothing -- which is not a hypothetical: text features were joined
+    # on (ticker, period_end) and an 8-K does not carry a fiscal period_end, so
+    # the whole block arrived as NaN and every text coefficient came out at
+    # exactly zero. A join that matches nothing looks identical to a feature
+    # with no predictive content, which is the worst way for a bug to fail.
+    join_keys = {name: "asof" for name in ("fund", "sue", "text") if name in blocks}
     panel = assemble_features(
         dataset.events, blocks, join_keys=join_keys, sector_map=dataset.universe.sector_map()
     )

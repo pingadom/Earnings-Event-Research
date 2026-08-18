@@ -95,6 +95,13 @@ def build_parser() -> argparse.ArgumentParser:
     hold.add_argument("--trials", default="conf/trials.json", help="specification log for the "
                       "deflated Sharpe ratio")
     hold.add_argument("--fm-frequency", default="M", help="Fama-MacBeth period, e.g. M or D")
+    hold.add_argument(
+        "--permutations",
+        type=int,
+        default=0,
+        help="shuffled-prediction null draws for the Sharpe ratio; 0 skips it. "
+        "200 is enough to read a percentile; it costs one backtest per draw",
+    )
 
     # Acquisition lives in scripts/download_data.py and is surfaced here so the
     # project has one entry point rather than two. The flags are that script's,
@@ -243,7 +250,9 @@ def _holdout(args, cfg) -> int:
     dataset = build_dataset(provider, cfg, args.start, args.end, tickers)
     study = run_event_study(dataset, cfg)
     panel = build_feature_panel(dataset, study, cfg)
-    result = run_annual_holdouts(panel, study, cfg, years)
+    result = run_annual_holdouts(
+        panel, study, cfg, years, n_permutations=getattr(args, "permutations", 0)
+    )
 
     save_stage(result.by_year, out, "holdout_by_year")
     save_stage(result.predictions, out, "holdout_predictions")

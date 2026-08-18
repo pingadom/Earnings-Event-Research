@@ -173,7 +173,15 @@ class FilingTextDownloader:
         """
         wanted = filings.loc[filings["form"].isin(["8-K", "8-K/A"])].copy()
         wanted = wanted.loc[wanted["items"].map(is_earnings_release)]
+        # Ordered by each firm's own filing sequence rather than alphabetically,
+        # so a run that is interrupted -- and at twenty-odd thousand documents
+        # one will be -- leaves every firm with a contiguous run of releases
+        # rather than the letter A complete and the letter Z empty. Similarity
+        # needs consecutive documents; balanced partial coverage is usable and
+        # alphabetical partial coverage is not.
         wanted = wanted.sort_values(["ticker", "filing_date"])
+        wanted["_sequence"] = wanted.groupby("ticker").cumcount()
+        wanted = wanted.sort_values(["_sequence", "ticker"]).drop(columns="_sequence")
         if limit is not None:
             wanted = wanted.head(limit)
         counts = {"requested": len(wanted), "downloaded": 0, "cached": 0, "failed": 0}

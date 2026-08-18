@@ -93,3 +93,46 @@ def test_surprise_expectation_uses_only_past_quarters(fundamentals):
     both = a.notna() & b.notna()
     assert both.sum() > 50, "not enough overlapping observations to make the test meaningful"
     np.testing.assert_allclose(a[both].to_numpy(), b[both].to_numpy(), rtol=1e-9)
+
+
+def test_text_similarity_cannot_see_later_filings():
+    """A future document must not change a similarity computed before it.
+
+    Fitting one TF-IDF space over a firm's whole history lets the
+    inverse-document-frequency weights of an early filing be shaped by
+    vocabulary that only appears years later. The feature's timestamp stays
+    honest, so this leak is invisible to the point-in-time validator and has to
+    be pinned by a test instead.
+    """
+    from earnings_engine.features.text import TextFeatureExtractor
+
+    extractor = TextFeatureExtractor()
+    history = [
+        "revenue grew strongly and margins expanded across every segment",
+        "revenue grew again and margins expanded across most segments",
+        "revenue declined and margins compressed across several segments",
+    ]
+    # A later filing full of vocabulary the earlier ones never used.
+    future = history + ["restructuring impairment goodwill writedown litigation reserve" * 3]
+
+    before, _ = extractor.similarity(history)
+    after, _ = extractor.similarity(future)
+    assert after[:3] == pytest.approx(before, nan_ok=True), (
+        "adding a later filing changed an earlier similarity: the TF-IDF space "
+        "is being fitted on the future"
+    )
+
+
+def test_text_similarity_still_measures_editorial_change():
+    """The guard above must not have been bought by making the feature inert."""
+    from earnings_engine.features.text import TextFeatureExtractor
+
+    extractor = TextFeatureExtractor()
+    prev, _ = extractor.similarity(
+        [
+            "revenue grew strongly and margins expanded across every segment",
+            "revenue grew strongly and margins expanded across every segment",
+            "restructuring impairment goodwill writedown litigation reserve entirely different",
+        ]
+    )
+    assert prev[1] > prev[2], "a rewritten filing must score less similar than a repeated one"

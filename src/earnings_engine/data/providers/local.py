@@ -171,7 +171,14 @@ class LocalProvider:
         quarter = local.dt.tz_localize(None).dt.to_period("Q")
         eight_k["period_end"] = (quarter - 1).dt.end_time.dt.normalize()
         eight_k["fiscal_quarter"] = (quarter - 1).astype(str)
-        eight_k["event_id"] = eight_k["accession"].astype("string")
+        # The accession alone is not unique. A filer with more than one listed
+        # share class -- GOOGL and GOOG, FOXA and FOX, NWSA and NWS -- files a
+        # single 8-K under a single CIK, and it arrives here once per ticker.
+        # Each class is separately tradable with its own price series, so both
+        # are real events; they just are not the same event.
+        eight_k["event_id"] = (
+            eight_k["ticker"].astype("string") + "-" + eight_k["accession"].astype("string")
+        )
 
         # A company can file more than one Item 2.02 in a quarter (a
         # pre-announcement, then the full release). Keep the earliest: that is

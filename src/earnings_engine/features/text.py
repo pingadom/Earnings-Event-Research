@@ -161,28 +161,47 @@ class TextFeatureExtractor:
     def similarity(self, texts: list[str]) -> tuple[np.ndarray, np.ndarray]:
         """Cosine similarity of each document to its predecessor and to t-4.
 
-        A single TF-IDF space is fitted per firm, so similarity measures change
+        The space is fitted **per firm and expanding through time**: document
+        *i* is scored in a TF-IDF space built from documents 0..i only.
+
+        The per-firm part is deliberate -- it makes the measure capture change
         in *this* company's language rather than drift relative to the market.
+
+        The expanding part is not an optimisation, it is a correctness
+        requirement. Fitting one space over a firm's whole history lets the
+        inverse-document-frequency weights of a 2019 filing be shaped by words
+        that first appeared in 2024, which is precisely the look-ahead this
+        project refuses everywhere else. It is a quiet leak: the feature's
+        timestamp is honest, the value behind it is not, so the point-in-time
+        validator cannot see it. Measured on the S&P 500 sample it was worth
+        roughly two and a half hundredths of information coefficient -- enough
+        to move a null result to a t-statistic of 2.
+
+        The cost is one refit per document. The vocabulary genuinely grows
+        through the sample, which is what a reader of these filings in real
+        time would have experienced.
         """
         from sklearn.feature_extraction.text import TfidfVectorizer  # noqa: PLC0415
 
         n = len(texts)
         prev = np.full(n, np.nan)
         yoy = np.full(n, np.nan)
-        usable = [t for t in texts if t and t.strip()]
-        if len(usable) < 2:
-            return prev, yoy
-        vec = TfidfVectorizer(max_features=self.max_features, sublinear_tf=True, min_df=1)
-        try:
-            matrix = vec.fit_transform([t or "" for t in texts])
-        except ValueError:  # empty vocabulary
-            return prev, yoy
-        norms = np.sqrt(matrix.multiply(matrix).sum(axis=1)).A.ravel()
-        norms[norms == 0] = np.nan
+        cleaned = [t or "" for t in texts]
         for i in range(1, n):
+            history = cleaned[: i + 1]
+            if sum(1 for t in history if t.strip()) < 2:
+                continue
+            try:
+                matrix = TfidfVectorizer(
+                    max_features=self.max_features, sublinear_tf=True, min_df=1
+                ).fit_transform(history)
+            except ValueError:  # empty vocabulary
+                continue
+            norms = np.sqrt(matrix.multiply(matrix).sum(axis=1)).A.ravel()
+            norms[norms == 0] = np.nan
             prev[i] = _cosine(matrix, i, i - 1, norms)
-        for i in range(4, n):
-            yoy[i] = _cosine(matrix, i, i - 4, norms)
+            if i >= 4:
+                yoy[i] = _cosine(matrix, i, i - 4, norms)
         return prev, yoy
 
 

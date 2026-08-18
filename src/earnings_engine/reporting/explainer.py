@@ -390,6 +390,11 @@ def build_explainer(
         "profitable_years": profitable,
         "losing_years": len(by_year) - profitable,
         "cost_drag": _pct(cost_drag, 2),
+        "perm_mean": _num(aggregate.get("perm_null_mean")),
+        "perm_pct": _num(aggregate.get("perm_percentile"), 0),
+        "perm_p": _num(aggregate.get("perm_p_value_one_sided"), 3),
+        "perm_n": aggregate.get("perm_n_permutations", 0),
+        "perm_excess": _num(aggregate.get("perm_excess_over_null")),
         "n_events": f"{int(metadata.get('n_events', 0)):,}",
         "n_years": aggregate.get("n_years", 0),
         "years": aggregate.get("years", ""),
@@ -716,6 +721,20 @@ in this project was logged — {{n_trials}} of them — and the headline Sharpe 
 <em>deflated</em> to account for the search. The deflated figure is <strong>{{dsr}}</strong>,
 where 0.95 would be the threshold for confidence. Most published backtests never do this
 arithmetic, and many would not survive it.</p>
+
+<h3>It knows what "no signal" actually looks like</h3>
+<p>A long-short book is not a neutral instrument. Holding twenty-day positions,
+rebalancing daily, and capping how much can sit in any one name produces a small
+negative drift even when the signal driving it is pure noise. So a negative Sharpe
+ratio is not automatically evidence against the hypothesis — some of it is just
+what this machinery does to anything.</p>
+<p>Rather than argue about how much, the study measures it. The same book is run
+{{perm_n}} times on the same events with the predictions <em>shuffled</em>, which
+destroys the link between a forecast and the stock it belongs to while leaving
+everything else identical. Shuffled, the book scores <strong>{{perm_mean}}</strong>
+on average. The real one scored {{sharpe}} — the <strong>{{perm_pct}}th
+percentile</strong> of that distribution, p = {{perm_p}}. Read the headline Sharpe
+against {{perm_mean}}, not against zero.</p>
 
 <h3>It checks the returns are not something ordinary in disguise</h3>
 <p>A strategy can look clever while really just holding cheap stocks, or small ones, or

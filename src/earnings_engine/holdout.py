@@ -42,6 +42,7 @@ import numpy as np
 import pandas as pd
 from scipy import stats as sps
 
+from .analysis.permutation import permutation_null
 from .backtest.costs import CostModel
 from .backtest.engine import run_backtest
 from .backtest.portfolio import build_positions
@@ -170,6 +171,7 @@ def run_annual_holdouts(
     baseline_feature: str = "sue_timeseries",
     min_train: int = 400,
     date_col: str = "t0",
+    n_permutations: int = 0,
 ) -> HoldoutResult:
     """Fit and evaluate one frozen model per holdout year."""
     target = config.model.target
@@ -257,6 +259,21 @@ def run_annual_holdouts(
 
     backtest = _stitched_backtest(predictions, study, config)
     aggregate = _aggregate(by_year, predictions, target, backtest)
+    if n_permutations:
+        # What does this book return when the predictions are worthless? Not
+        # zero -- see analysis/permutation.py. Without this number a negative
+        # Sharpe ratio cannot be read.
+        null = permutation_null(
+            predictions,
+            lambda frame: _stitched_backtest(frame, study, config),
+            statistic="sharpe_net",
+            observed=aggregate.get("stitched_sharpe_net"),
+            n_permutations=n_permutations,
+            seed=config.model.random_state,
+        )
+        aggregate.update(
+            {f"perm_{k}": v for k, v in null.as_dict().items() if k != "statistic"}
+        )
     return HoldoutResult(
         by_year=by_year,
         predictions=predictions,
