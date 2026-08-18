@@ -25,8 +25,8 @@ universe → prices/events/fundamentals/filings
 ## Quickstart
 
 ```bash
-git clone https://github.com/aaryanh06/earnings-event-engine
-cd earnings-event-engine
+git clone https://github.com/pingadom/Earnings-Event-Research.git
+cd Earnings-Event-Research
 python -m venv .venv && source .venv/bin/activate      # Windows: .venv\Scripts\activate
 pip install -e ".[dev]"
 

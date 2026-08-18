@@ -45,7 +45,7 @@ dev = ["pytest>=7.4", "pytest-cov>=4.1", "ruff>=0.4", "mypy>=1.8", "ipykernel>=6
 eee = "earnings_engine.cli:main"
 
 [project.urls]
-Homepage = "https://github.com/aaryanh06/earnings-event-engine"
+Homepage = "https://github.com/pingadom/Earnings-Event-Research"
 
 [tool.setuptools.packages.find]
 where = ["src"]
