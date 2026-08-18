@@ -27,7 +27,7 @@ jobs:
           pip install -e ".[dev]"
 
       - name: Lint
-        run: ruff check src tests
+        run: ruff check src tests scripts
 
       - name: Test
         # -m "not network": the whole suite runs against the deterministic
@@ -37,9 +37,22 @@ jobs:
       - name: End-to-end demo
         run: python -m earnings_engine.cli demo --out reports/demo --quiet
 
-      - name: Upload demo artefacts
+      - name: Rolling annual holdouts, with the null control
+        # The null run is the point: if the pipeline finds a result in data
+        # with no effect planted in it, everything else is an artefact.
+        run: |
+          python -m earnings_engine.cli holdout --out reports/holdout --quiet
+          python -m earnings_engine.cli holdout --drift 0 --out reports/holdout_null --quiet
+
+      - name: Reproducibility check
+        # Re-runs every published number and diffs SHA-256 against the
+        # committed manifest, so non-determinism cannot creep in unnoticed.
+        if: matrix.python-version == '3.12'
+        run: python scripts/reproduce.py --check
+
+      - name: Upload reports
         if: matrix.python-version == '3.12'
         uses: actions/upload-artifact@v4
         with:
-          name: demo-report
-          path: reports/demo
+          name: reports
+          path: reports/

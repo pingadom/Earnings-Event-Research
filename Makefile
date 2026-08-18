@@ -27,6 +27,19 @@ test-cov:         ## Run tests with coverage
 demo:             ## End-to-end run on synthetic data; writes to reports/
 	python -m earnings_engine.cli demo --out reports/demo
 
+holdout:          ## Rolling annual holdouts + null control + dashboard
+	python -m earnings_engine.cli holdout --out reports/holdout
+	python -m earnings_engine.cli holdout --drift 0 --out reports/holdout_null
+
+reproduce:        ## Regenerate every published number and fingerprint it
+	python scripts/reproduce.py
+
+note:             ## Rebuild the two-page research note (docs/research-note.pdf)
+	python scripts/make_research_note.py
+
+verify:           ## Re-run and check the fingerprints against docs/manifest.json
+	python scripts/reproduce.py --check
+
 clean:            ## Remove caches and build artefacts
 	rm -rf .pytest_cache .ruff_cache .mypy_cache build dist *.egg-info
 	find . -name __pycache__ -type d -prune -exec rm -rf {} +

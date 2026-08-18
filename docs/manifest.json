@@ -1,0 +1,162 @@
+{
+  "environment": {
+    "python": "3.11.15",
+    "platform": "Linux-6.18.5-fc-v20-x86_64-with-glibc2.39",
+    "packages": {
+      "numpy": "2.4.4",
+      "pandas": "3.0.2",
+      "scipy": "1.17.1",
+      "sklearn": "1.8.0",
+      "matplotlib": "3.10.9"
+    },
+    "git_commit": "0e15cbcc3a0259c12e16c85d2afc1bd587cb5e0c",
+    "git_dirty": true,
+    "generated_at_utc": "2026-08-18T18:55:58+00:00"
+  },
+  "artefacts": {
+    "reports/holdout/holdout_by_year.csv": {
+      "sha256": "1e1a4a64ee09d70ad3f42e5449c5607fde71a70122fece57032c4c80d8e7df48",
+      "bytes": 2771
+    },
+    "reports/holdout_null/holdout_by_year.csv": {
+      "sha256": "93c2f9dba629f22c5983ab05bfe149913166654ae2f10e1f82adaed3c804bdb0",
+      "bytes": 2845
+    },
+    "reports/holdout/holdout_summary.json": {
+      "sha256": "4b34889eef9e1475a96f61f9470978fc8c702567b09bd8c68b281b504a9b9ee7",
+      "bytes": 1433
+    },
+    "reports/holdout_null/holdout_summary.json": {
+      "sha256": "1fe2b6947d943ea81cfbbbbee5a1f07f413c6efbdf44b98560366e088645526a",
+      "bytes": 1458
+    },
+    "reports/demo/significance.csv": {
+      "sha256": "2072c7cf238913ca4a13f87ed3d0c7bd600e5b66c855ea949956f7e7adc8139e",
+      "bytes": 7715
+    },
+    "reports/demo/event_summary.csv": {
+      "sha256": "a75192849492e392c49d2320a2b06b1aab61cf44242510db10ca0151e814410d",
+      "bytes": 6130035
+    },
+    "reports/holdout/factor_attribution.csv": {
+      "sha256": "84c7bbd4285109cb2f9707a3c1ec8d1f7a2e966807bbdb94e43c9dd125c71888",
+      "bytes": 498
+    },
+    "reports/holdout_null/factor_attribution.csv": {
+      "sha256": "f2b8c12bb326dd30702d74f20ad4973e08bc177f169c66d59bd6361dfc549e5c",
+      "bytes": 497
+    },
+    "reports/holdout/fama_macbeth.csv": {
+      "sha256": "9f73f93b5fb5fef3cb4b6c1460d3b88f9b8d554b7eaa931559da0e376d130fb0",
+      "bytes": 1143
+    },
+    "reports/holdout_null/fama_macbeth.csv": {
+      "sha256": "5a03f7a59c8c325cae84d4e4205c18cbfa3094a565221f772293dd49f95d0cb4",
+      "bytes": 714
+    },
+    "reports/holdout/dsr_sensitivity.csv": {
+      "sha256": "ddb59e3bf15b82f020fb80541441ac36d4caa95e964a71674d53e57a74f57056",
+      "bytes": 233
+    },
+    "reports/holdout_null/dsr_sensitivity.csv": {
+      "sha256": "26ef3f60bb4a2c16e54e4f0adeb219393d27a3a1fc6e11a637800ec29d4917b1",
+      "bytes": 238
+    },
+    "reports/demo/figures/car_by_quantile.png": {
+      "sha256": "7df4ba6c8d9489d19458206e82aec5cdb04e1a2dd8c008efc5c14ae39d02dbb9",
+      "bytes": 73464
+    },
+    "reports/demo/figures/cost_sensitivity.png": {
+      "sha256": "d110a6a4abf799075f7c18b84f710656d0a5f7f3e700ab5551b904a24be88dfc",
+      "bytes": 38583
+    },
+    "reports/demo/figures/equity_curve.png": {
+      "sha256": "4b56546454f64af20ad113e975628b86d80b3f05cb29e0f49bfbea11b969a996",
+      "bytes": 54507
+    },
+    "reports/demo/figures/event_study.png": {
+      "sha256": "7619243bc70e4de893092f2578da2f55baec7542aa700573991e5cc852972133",
+      "bytes": 68154
+    },
+    "reports/demo/figures/ic_timeseries.png": {
+      "sha256": "f557915730453531d3da4b8e283c2da4e246e6f8e8c4d36a1e181587360d0a23",
+      "bytes": 54234
+    },
+    "reports/holdout/figures/calibration.png": {
+      "sha256": "c0ccbf46cbb41bd4e5fe4513dc2c4bf693e121b212a508b0795c78c503fbbc65",
+      "bytes": 79590
+    },
+    "reports/holdout/figures/car_by_quantile.png": {
+      "sha256": "19605db2c09a757675a07c7d4e89641c736ddd9e7e572ca2c55533e6e32d70b0",
+      "bytes": 72493
+    },
+    "reports/holdout/figures/coefficient_stability.png": {
+      "sha256": "eb391fb3eee7161fa2c03ff961c97d1105619e34325e5a504bf640c469101052",
+      "bytes": 80137
+    },
+    "reports/holdout/figures/dsr_sensitivity.png": {
+      "sha256": "e3e5636b4a478bf13491b1fad52cf77b2e8cb6022cb8ccf3e29043a8d54ded33",
+      "bytes": 41944
+    },
+    "reports/holdout/figures/equity_curve.png": {
+      "sha256": "3cd43f07132f51e78c756ac24be8998fcbba62b6ca3d3c6218a334b792fc5a3d",
+      "bytes": 56901
+    },
+    "reports/holdout/figures/factor_loadings.png": {
+      "sha256": "f5598e339b98d96657bfd4eba526d7b25923c5f02f9608bc8d34c9744e27b5aa",
+      "bytes": 47375
+    },
+    "reports/holdout/figures/holdout_ic.png": {
+      "sha256": "ef8f3b0419bdcf189a9f8391918feebcc9218e46c4c9aed26e083d7495249de9",
+      "bytes": 37287
+    },
+    "reports/holdout/figures/predicted_vs_realised.png": {
+      "sha256": "f91d82bc01163c54c89ce654eb5f12d64e219589b0c7747665947b0c2aa54d01",
+      "bytes": 35288
+    },
+    "reports/holdout_null/figures/calibration.png": {
+      "sha256": "9ec912d4bb1565d7eb1e9c6b9476d5522bd2ac44a00a9bcdb0ac129c6a4914a9",
+      "bytes": 77806
+    },
+    "reports/holdout_null/figures/car_by_quantile.png": {
+      "sha256": "6b23c49d62b1707af4db16b1282f04ef0d1ffd42e1c59a961198d19df37da333",
+      "bytes": 111647
+    },
+    "reports/holdout_null/figures/coefficient_stability.png": {
+      "sha256": "c06fdb7eacc016494392c12b4e7d7cafecaf2fcd5d62381e87a6a6567668eeba",
+      "bytes": 81386
+    },
+    "reports/holdout_null/figures/dsr_sensitivity.png": {
+      "sha256": "6c17d6ab33df9cb65d0cce60ce340ad015dfac8e66a199de38b80cdb261de087",
+      "bytes": 53333
+    },
+    "reports/holdout_null/figures/equity_curve.png": {
+      "sha256": "822181593651cdf397ec3bebe4a62abf5b170e75ce40c66361438a1d7a2aa600",
+      "bytes": 80060
+    },
+    "reports/holdout_null/figures/factor_loadings.png": {
+      "sha256": "7a70a4d64f7f08099ca47cb9a446d2f9986b6bd76f4969b008a91a068bb2bb4a",
+      "bytes": 47657
+    },
+    "reports/holdout_null/figures/holdout_ic.png": {
+      "sha256": "746f494165c50acfa0720969cebd760ebdae36e6e68858d0b527e7bdde6f593d",
+      "bytes": 41346
+    },
+    "reports/holdout_null/figures/predicted_vs_realised.png": {
+      "sha256": "1121283848e10233635bcd357d4839c719b3bb037d7a72398474a553f90f9d17",
+      "bytes": 35782
+    },
+    "docs/results.md": {
+      "sha256": "184acd58c605da8307c185876028efdd0e6182073821afc828cf388879fc41b6",
+      "bytes": 17669
+    },
+    "conf/config.yaml": {
+      "sha256": "8ad34db9697c403b62d42fc0f65977310442e07c8f3a0367e8e458dbc42edf2e",
+      "bytes": 2169
+    },
+    "conf/trials.json": {
+      "sha256": "095af94723477d2c09bd251680f04b564c03ec896f611fe68eb3d3e7a9ebd479",
+      "bytes": 3389
+    }
+  }
+}
