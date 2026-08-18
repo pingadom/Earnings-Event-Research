@@ -60,7 +60,12 @@ def build_estimator(kind: str = "ridge", random_state: int = 20260818, **kwargs)
 
     return Pipeline(
         [
-            ("impute", SimpleImputer(strategy="median")),
+            # keep_empty_features: an all-NaN column in one fold is dropped
+            # otherwise, so the fitted model silently has fewer coefficients
+            # than the feature list -- which breaks coefficient bookkeeping and,
+            # worse, makes the feature set differ between folds without saying
+            # so. Kept and filled with zero, it simply contributes nothing.
+            ("impute", SimpleImputer(strategy="median", keep_empty_features=True)),
             ("scale", StandardScaler()),
             ("model", model),
         ]

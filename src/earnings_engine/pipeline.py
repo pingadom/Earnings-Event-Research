@@ -145,7 +145,14 @@ def build_feature_panel(
             dataset.filings, dataset.text_loader, config.features.lm_dictionary_path
         )
 
-    panel = assemble_features(dataset.events, blocks, sector_map=dataset.universe.sector_map())
+    # Fundamentals and surprise attach by publication time, not by period_end:
+    # against real SEC data the two calendars do not agree and a key-based join
+    # silently matches nothing. Text stays keyed, since a filing is tied to the
+    # event that produced it.
+    join_keys = {name: "asof" for name in ("fund", "sue") if name in blocks}
+    panel = assemble_features(
+        dataset.events, blocks, join_keys=join_keys, sector_map=dataset.universe.sector_map()
+    )
     labels = result.summary.drop(
         columns=[c for c in result.summary.columns if c in panel.columns and c != "event_id"]
     )

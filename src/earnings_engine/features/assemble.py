@@ -62,7 +62,7 @@ def assemble_features(
     events: pd.DataFrame,
     blocks: dict[str, pd.DataFrame],
     *,
-    join_keys: dict[str, list[str]] | None = None,
+    join_keys: dict[str, list[str] | str] | None = None,
     sector_map: dict[str, str] | None = None,
     validate: bool = True,
 ) -> pd.DataFrame:
@@ -90,7 +90,13 @@ def assemble_features(
             continue
         if "available_from_utc" not in block.columns:
             raise KeyError(f"feature block {name!r} has no available_from_utc column")
-        keys = join_keys.get(name, ["ticker", "period_end"])
+        spec = join_keys.get(name, ["ticker", "period_end"])
+        if spec == "asof":
+            panel = _asof_join(panel, block, name)
+            stamps.append(f"available_from_{name}")
+            continue
+
+        keys = spec
         missing = [k for k in keys if k not in block.columns or k not in panel.columns]
         if missing:
             raise KeyError(f"feature block {name!r} cannot join on {missing}")
@@ -136,6 +142,65 @@ def assemble_features(
         assert_point_in_time(check, label="assembled feature panel")
 
     return panel
+
+
+def _asof_join(panel: pd.DataFrame, block: pd.DataFrame, name: str) -> pd.DataFrame:
+    """Attach the most recent block row published before each event's trade time.
+
+    Joining fundamentals to events on ``period_end`` assumes the two agree on
+    what a fiscal period is. Against real SEC data they do not: an 8-K carries
+    the announcement date, XBRL facts carry the accounting period end, and the
+    two match for essentially no rows. The result is a silent zero-coverage
+    join -- every feature NaN, no error raised, a model quietly trained on
+    nothing.
+
+    Publication time is the honest key anyway. "The most recent fundamentals
+    that were public when I traded" is exactly the quantity the research needs,
+    it requires no agreement about fiscal calendars, and it is point-in-time
+    correct by construction rather than by convention.
+    """
+    def _utc(series: pd.Series) -> pd.Series:
+        """UTC at a common resolution.
+
+        merge_asof refuses to join datetime64[ns, UTC] against
+        datetime64[us, UTC], and pandas picks the unit differently depending on
+        whether a column came from a parquet file, a CSV or a constructor.
+        """
+        out = pd.to_datetime(series, utc=True)
+        return out.dt.as_unit("us") if hasattr(out.dt, "as_unit") else out
+
+    left = panel.copy()
+    left["trade_open_ts"] = _utc(left["trade_open_ts"])
+    left = left.sort_values("trade_open_ts")
+
+    right = block.copy()
+    right["available_from_utc"] = _utc(right["available_from_utc"])
+    right = right.sort_values("available_from_utc")
+
+    drop = [c for c in right.columns if c in left.columns and c != "ticker"]
+    right = right.drop(columns=drop)
+    right = right.rename(columns={"available_from_utc": f"available_from_{name}"})
+
+    merged = pd.merge_asof(
+        left,
+        right,
+        left_on="trade_open_ts",
+        right_on=f"available_from_{name}",
+        by="ticker",
+        direction="backward",
+        allow_exact_matches=True,
+    )
+    matched = int(merged[f"available_from_{name}"].notna().sum())
+    log.info(
+        "block %r: as-of join matched %d/%d events (%.0f%%)",
+        name, matched, len(merged), 100.0 * matched / max(len(merged), 1),
+    )
+    if matched == 0:
+        log.warning(
+            "block %r matched no events at all. Check that its available_from_utc "
+            "overlaps the event window and that tickers agree.", name,
+        )
+    return merged
 
 
 def cohort_key(panel: pd.DataFrame, date_col: str = "t0", freq: str = "M") -> pd.Series:

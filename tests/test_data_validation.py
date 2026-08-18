@@ -37,7 +37,15 @@ def test_impossible_ohlc_is_rejected():
     assert any(issue.code == "impossible_ohlc" for issue in report.errors)
 
 
-def test_filing_cannot_be_available_before_its_filing_date():
+def test_acceptance_before_filing_date_is_reported_but_not_an_error():
+    """Raw data stays faithful to EDGAR; the adapter takes the conservative side.
+
+    EDGAR itself returns acceptance timestamps earlier than the filing date for
+    a meaningful minority of filings, and which of the two governs public
+    availability is not documented unambiguously. Rewriting the source here
+    would hide that, so this layer reports it and
+    LocalProvider._conservative_availability resolves it.
+    """
     fundamentals = pd.DataFrame(
         {
             "ticker": ["AAPL"],
@@ -49,7 +57,8 @@ def test_filing_cannot_be_available_before_its_filing_date():
         }
     )
     report = validate_frames({"fundamentals": fundamentals})
-    assert any(issue.code == "availability_before_filing" for issue in report.errors)
+    assert not report.errors
+    assert any(i.code == "acceptance_precedes_filing_date" for i in report.issues)
 
 
 def test_earnings_outside_price_history_is_reported_not_discarded():
@@ -106,8 +115,9 @@ def test_weekend_filing_shift_is_not_an_error():
     assert not any(i.code == "availability_before_filing" for i in report.errors)
 
 
-def test_daytime_acceptance_before_the_filing_date_is_still_an_error():
-    """No convention explains a 16:00 ET acceptance dated to the next day."""
+def test_daytime_acceptance_before_the_filing_date_is_flagged():
+    """A 16:00 ET acceptance dated to the next day has no filing-time
+    explanation, so it is called out separately from the after-hours case."""
     fundamentals = pd.DataFrame(
         {
             "ticker": ["XYZ"],
@@ -119,7 +129,7 @@ def test_daytime_acceptance_before_the_filing_date_is_still_an_error():
         }
     )
     report = validate_frames({"fundamentals": fundamentals})
-    assert any(i.code == "availability_before_filing" for i in report.errors)
+    assert any(i.code == "acceptance_precedes_filing_date" for i in report.issues)
 
 
 def test_csv_fallback_preserves_datetime_dtypes(tmp_path):
@@ -161,3 +171,35 @@ def test_csv_fallback_handles_mixed_date_precision(tmp_path):
     back = read_table(path)
     assert str(back["date"].dtype).startswith("datetime64")
     assert back["date"].notna().all()
+
+
+def test_adapter_never_claims_availability_before_the_filing_date():
+    """The invariant that actually protects the study.
+
+    Whatever EDGAR reports, the research adapter must never treat a document as
+    public earlier than its stated filing date. Being a few hours conservative
+    costs nothing -- an after-hours filing resolves to the following midnight
+    Eastern, and the event aligner already pushes such announcements to the next
+    session's 09:30 open.
+    """
+    from earnings_engine.data.providers.local import LocalProvider
+
+    accepted = pd.Series(
+        [
+            pd.Timestamp("2018-04-25 19:38", tz="UTC"),  # 15:38 ET, dated next day
+            pd.Timestamp("2019-10-30 22:12", tz="UTC"),  # 18:12 ET, after hours
+            pd.Timestamp("2024-05-02 14:00", tz="UTC"),  # same day, normal
+        ]
+    )
+    filed = pd.Series(
+        [pd.Timestamp("2018-04-26"), pd.Timestamp("2019-10-31"), pd.Timestamp("2024-05-02")]
+    )
+    out = LocalProvider._conservative_availability(accepted, filed)
+    floor = (
+        filed.dt.normalize().dt.tz_localize("America/New_York").dt.tz_convert("UTC")
+    )
+    assert (out >= floor).all()
+    # An unaffected same-day filing keeps its real acceptance time.
+    assert out.iloc[2] == accepted.iloc[2]
+    # And the floor lands before the opening bell, so nothing is lost.
+    assert out.iloc[1].tz_convert("America/New_York").hour < 9

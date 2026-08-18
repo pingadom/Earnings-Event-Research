@@ -304,12 +304,20 @@ def _validate_fundamentals(frame: pd.DataFrame, report: ValidationReport) -> Non
     unexplained = early & (minutes < cutoff)
 
     if unexplained.any():
+        # EDGAR itself reports these: Ford's Q1-2018 10-Q carries acceptance
+        # 2018-04-25 15:38 ET against a filingDate of 2018-04-26, well before
+        # any 17:30 cutoff. Which of the two governs public availability is not
+        # documented unambiguously, so `data/raw` stays faithful to what SEC
+        # returned and the research adapter takes the conservative side --
+        # max(acceptance, filing date) -- rather than this layer silently
+        # rewriting the source. See LocalProvider.get_fundamentals.
         report.add(
-            "error",
+            "info",
             "fundamentals",
-            "availability_before_filing",
-            f"{int(unexplained.sum())} observations became available before their filing date "
-            f"without an after-hours acceptance to explain it",
+            "acceptance_precedes_filing_date",
+            f"{int(unexplained.sum())} observations carry an EDGAR acceptance timestamp earlier "
+            f"than their filing date with no after-hours explanation. Raw data is left as SEC "
+            f"returned it; the research adapter uses the later of the two.",
         )
     if explained.any():
         report.add(

@@ -227,7 +227,18 @@ def run_annual_holdouts(
 
         linear = getattr(model.named_steps.get("model"), "coef_", None)
         if linear is not None:
-            coefs.append(pd.Series(np.ravel(linear), index=features, name=int(year)))
+            flat = np.ravel(linear)
+            if len(flat) == len(features):
+                coefs.append(pd.Series(flat, index=features, name=int(year)))
+            else:
+                # Belt and braces: a preprocessing step dropped columns, so the
+                # coefficients no longer line up with the feature list. Skip the
+                # stability record rather than mislabel it.
+                log.warning(
+                    "holdout %d: %d coefficients for %d features; skipping the "
+                    "coefficient record for this fold",
+                    year, len(flat), len(features),
+                )
 
         rows.append(
             _score_year(
