@@ -34,6 +34,17 @@ def build_parser() -> argparse.ArgumentParser:
     modes.add_argument("--prices-only", action="store_true")
     modes.add_argument("--sec-only", action="store_true")
     modes.add_argument("--earnings-only", action="store_true")
+    modes.add_argument(
+        "--text-only",
+        action="store_true",
+        help="fetch only the earnings-release bodies behind Item 2.02 8-Ks",
+    )
+    parser.add_argument(
+        "--text-limit",
+        type=int,
+        default=None,
+        help="stop after this many earnings releases (for a quick smoke run)",
+    )
     parser.add_argument("--force-refresh", action="store_true", help="bypass response caches")
     parser.add_argument("--validate-only", action="store_true", help="do not use the network")
     parser.add_argument(
@@ -71,8 +82,10 @@ def main(argv: list[str] | None = None) -> int:
         datasets = {"sec"}
     elif args.earnings_only:
         datasets = {"earnings"}
+    elif args.text_only:
+        datasets = {"text"}
     else:
-        datasets = {"membership", "prices", "benchmarks", "sec", "earnings", "factors"}
+        datasets = {"membership", "prices", "benchmarks", "sec", "earnings", "factors", "text"}
     config = config_from_environment(
         raw_dir=args.raw_dir,
         cache_dir=args.cache_dir,
@@ -82,6 +95,7 @@ def main(argv: list[str] | None = None) -> int:
         datasets=datasets,
         force=args.force_refresh,
         stooq_fallback=not args.no_stooq_fallback,
+        text_limit=args.text_limit,
     )
     try:
         result = run_acquisition(config, validate_only=args.validate_only)

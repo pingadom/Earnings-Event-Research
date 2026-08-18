@@ -45,6 +45,7 @@ EARNINGS_COLUMNS = (
 
 FUNDAMENTAL_VALUE_COLUMNS = (
     "revenue",
+    "gross_profit",
     "operating_income",
     "net_income",
     "eps",
@@ -56,6 +57,7 @@ FUNDAMENTAL_VALUE_COLUMNS = (
     "operating_cash_flow",
     "capital_expenditure",
     "free_cash_flow",
+    "shares_diluted",
     "shares_outstanding",
 )
 

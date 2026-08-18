@@ -16,6 +16,7 @@ import numpy as np
 import pandas as pd
 
 from .http import HttpClient
+from .quarterise import quarterly_flow_records
 from .schemas import FILING_COLUMNS, FUNDAMENTAL_COLUMNS, FUNDAMENTAL_VALUE_COLUMNS
 
 TICKERS_URL = "https://www.sec.gov/files/company_tickers.json"
@@ -34,6 +35,14 @@ class ConceptSpec:
     kind: str
     units: tuple[str, ...]
     concepts: tuple[tuple[str, str], ...]
+    #: Whether a cumulative year-to-date figure may be differenced into a
+    #: discrete quarter. True for anything that sums over time.
+    additive: bool = True
+    #: Whether that difference is *exact*. Per-share figures are differenced by
+    #: the same convention Compustat uses, but the weighted average share count
+    #: in the denominator drifts between quarters, so the result is an
+    #: approximation and is labelled as one in the provenance.
+    exact: bool = True
 
 
 CONCEPTS: dict[str, ConceptSpec] = {
@@ -46,6 +55,7 @@ CONCEPTS: dict[str, ConceptSpec] = {
             ("us-gaap", "SalesRevenueNet"),
         ),
     ),
+    "gross_profit": ConceptSpec("flow", ("USD",), (("us-gaap", "GrossProfit"),)),
     "operating_income": ConceptSpec("flow", ("USD",), (("us-gaap", "OperatingIncomeLoss"),)),
     "net_income": ConceptSpec(
         "flow",
@@ -60,6 +70,7 @@ CONCEPTS: dict[str, ConceptSpec] = {
             ("us-gaap", "EarningsPerShareBasicAndDiluted"),
             ("us-gaap", "EarningsPerShareBasic"),
         ),
+        exact=False,
     ),
     "total_assets": ConceptSpec("instant", ("USD",), (("us-gaap", "Assets"),)),
     "total_liabilities": ConceptSpec("instant", ("USD",), (("us-gaap", "Liabilities"),)),
@@ -101,6 +112,15 @@ CONCEPTS: dict[str, ConceptSpec] = {
             ("us-gaap", "PaymentsToAcquirePropertyPlantAndEquipment"),
             ("us-gaap", "PaymentsToAcquireProductiveAssets"),
         ),
+    ),
+    "shares_diluted": ConceptSpec(
+        "flow",
+        ("shares",),
+        (
+            ("us-gaap", "WeightedAverageNumberOfDilutedSharesOutstanding"),
+            ("us-gaap", "WeightedAverageNumberOfShareOutstandingBasicAndDiluted"),
+        ),
+        additive=False,
     ),
     "shares_outstanding": ConceptSpec(
         "instant",
@@ -284,10 +304,8 @@ class SecDownloader:
                 if not node:
                     continue
                 for unit_rank, unit in enumerate(spec.units):
-                    for fact in node.get("units", {}).get(unit, []):
-                        record = _candidate_fact(fact, spec, start_ts, end_ts)
-                        if record is None:
-                            continue
+                    raw = node.get("units", {}).get(unit, [])
+                    for record in _records_for(spec, raw, start_ts, end_ts):
                         key = (
                             record["accession"],
                             record["period_end"],
@@ -304,6 +322,10 @@ class SecDownloader:
                             "end": str(record["period_end"].date()),
                             "accession": record["accession"],
                         }
+                        derivation = record.pop("derivation", None)
+                        if derivation is not None:
+                            provenance["derivation"] = derivation
+                            provenance["approximate"] = not spec.exact
                         record["provenance"] = provenance
                         if key not in candidates or score < candidates[key][0]:
                             candidates[key] = (score, record)
@@ -343,6 +365,18 @@ class SecDownloader:
                 row["_provenance"]["free_cash_flow"] = {
                     "derived": "operating_cash_flow - capital_expenditure"
                 }
+            # Roughly a third of filers never tag ``Liabilities`` directly, but
+            # the balance sheet identity recovers it exactly from two figures
+            # they do tag. Only used when the direct tag is absent.
+            if (
+                pd.isna(row["total_liabilities"])
+                and pd.notna(row["total_assets"])
+                and pd.notna(row["shareholders_equity"])
+            ):
+                row["total_liabilities"] = row["total_assets"] - row["shareholders_equity"]
+                row["_provenance"]["total_liabilities"] = {
+                    "derived": "total_assets - shareholders_equity"
+                }
             row["filing_date"] = filed
             row["available_from_utc"] = available
             row["provenance_json"] = json.dumps(row.pop("_provenance"), sort_keys=True)
@@ -360,6 +394,33 @@ class SecDownloader:
         )
 
 
+def _records_for(
+    spec: ConceptSpec, facts: list[dict[str, Any]], start: pd.Timestamp, end: pd.Timestamp
+) -> list[dict[str, Any]]:
+    """Candidate records for one concept, one unit.
+
+    Instants are point-in-time by construction and pass through unchanged.
+    Flows are routed through :mod:`~earnings_engine.data.quarterise`, which is
+    what guarantees every flow value in the durable table describes a single
+    fiscal quarter rather than a year-to-date accumulation.
+    """
+    if spec.kind == "flow":
+        return quarterly_flow_records(
+            facts,
+            allowed_forms=FACT_FORMS,
+            window_start=start,
+            window_end=end,
+            additive=spec.additive,
+        )
+    records = []
+    for fact in facts:
+        record = _candidate_fact(fact, spec, start, end)
+        if record is not None:
+            record["derivation"] = None
+            records.append(record)
+    return records
+
+
 def _value(block: dict[str, Any], key: str, index: int, default: Any) -> Any:
     values = block.get(key, [])
     return values[index] if index < len(values) else default
@@ -368,6 +429,7 @@ def _value(block: dict[str, Any], key: str, index: int, default: Any) -> Any:
 def _candidate_fact(
     fact: dict[str, Any], spec: ConceptSpec, start: pd.Timestamp, end: pd.Timestamp
 ) -> dict[str, Any] | None:
+    """One balance-sheet observation. Flows go through ``quarterly_flow_records``."""
     form = str(fact.get("form", ""))
     if form not in FACT_FORMS or not fact.get("accn") or fact.get("val") is None:
         return None
@@ -377,17 +439,6 @@ def _candidate_fact(
         return None
     fact_start = pd.to_datetime(fact.get("start"), errors="coerce")
     duration_score = 0
-    if spec.kind == "flow":
-        if pd.isna(fact_start):
-            return None
-        days = int((period_end - fact_start).days) + 1
-        is_annual = form.startswith(("10-K", "20-F", "40-F")) or fact.get("fp") == "FY"
-        target = 365 if is_annual else 91
-        if is_annual and not 250 <= days <= 430:
-            return None
-        if not is_annual and not 60 <= days <= 120:
-            return None
-        duration_score = abs(days - target)
     try:
         value = float(fact["val"])
     except (TypeError, ValueError):

@@ -16,6 +16,7 @@ import pandas as pd
 from .constituents import download_sp500_membership, tickers_for_window
 from .earnings import download_yahoo_earnings, reconcile_earnings, sec_earnings_from_filings
 from .fama_french import download_fama_french_daily
+from .filing_text import FilingTextDownloader
 from .http import HttpClient
 from .providers.stooq import StooqProvider
 from .providers.yahoo import YahooProvider
@@ -39,6 +40,8 @@ class AcquisitionConfig:
     datasets: frozenset[str] = frozenset(
         {"membership", "prices", "benchmarks", "sec", "earnings", "factors"}
     )
+    #: Cap on earnings releases fetched in one run; ``None`` means all of them.
+    text_limit: int | None = None
     force: bool = False
     stooq_fallback: bool = True
     sec_user_agent: str = ""
@@ -193,6 +196,25 @@ def _download_price_symbols(
         successes,
         failures,
     )
+
+
+def _download_filing_text(
+    filings: pd.DataFrame, tickers: list[str], config: AcquisitionConfig
+) -> dict[str, int]:
+    """Cache the press release behind every Item 2.02 8-K in the filings table."""
+    if filings.empty:
+        return {"requested": 0, "downloaded": 0, "cached": 0, "failed": 0}
+    wanted = {str(ticker).upper() for ticker in tickers}
+    subset = filings.loc[filings["ticker"].astype("string").str.upper().isin(wanted)]
+    downloader = FilingTextDownloader(
+        client=HttpClient(
+            user_agent=config.sec_user_agent,
+            cache_dir=None,
+            min_interval=0.12,
+        ),
+        text_dir=config.raw_dir / "sec_filing_text",
+    )
+    return downloader.fetch_many(subset, limit=config.text_limit)
 
 
 def _download_sec(
@@ -410,6 +432,24 @@ def run_acquisition(config: AcquisitionConfig, *, validate_only: bool = False) -
     else:
         available_filings = _existing(filings_path, FILING_COLUMNS)
 
+    if "text" in config.datasets:
+        counts = _download_filing_text(available_filings, tickers, config)
+        report.add(
+            "warning" if counts["failed"] else "info",
+            "filing_text",
+            "coverage",
+            f"{counts['downloaded']} downloaded, {counts['cached']} already cached, "
+            f"{counts['failed']} failed of {counts['requested']} earnings releases",
+        )
+        if counts["failed"]:
+            failures.append(
+                {
+                    "dataset": "text",
+                    "ticker": "",
+                    "error": f"{counts['failed']} releases could not be extracted",
+                }
+            )
+
     if "earnings" in config.datasets:
         earnings, successful, stage_failures = _download_earnings(
             tickers, config, available_filings
@@ -475,6 +515,7 @@ def config_from_environment(
     end: str,
     tickers: Iterable[str],
     datasets: Iterable[str],
+    text_limit: int | None = None,
     force: bool,
     stooq_fallback: bool,
 ) -> AcquisitionConfig:
@@ -485,6 +526,7 @@ def config_from_environment(
         end=str(pd.Timestamp(end).date()),
         tickers=tuple(_normalise_tickers(tickers)),
         datasets=frozenset(datasets),
+        text_limit=text_limit,
         force=force,
         stooq_fallback=stooq_fallback,
         sec_user_agent=os.environ.get("SEC_USER_AGENT", "").strip(),

@@ -10,6 +10,7 @@ import pandas as pd
 from ...utils.frames import EVENTS, FILINGS, FUNDAMENTALS, PRICES, UNIVERSE
 from ...utils.logging_utils import get_logger
 from ..base import ProviderError
+from ..filing_text import is_earnings_release, read_text
 from ..registry import register
 from ..storage import read_table, table_path
 
@@ -269,6 +270,7 @@ class LocalProvider:
         ].copy()
         mapping = {
             "revenue": "revenue",
+            "gross_profit": "gross_profit",
             "operating_income": "operating_income",
             "net_income": "net_income",
             "eps": "eps_diluted",
@@ -280,7 +282,11 @@ class LocalProvider:
             "operating_cash_flow": "cfo",
             "capital_expenditure": "capex",
             "free_cash_flow": "free_cash_flow",
-            "shares_outstanding": "shares_diluted",
+            # Weighted-average diluted shares is the denominator earnings per
+            # share is actually computed on. The cover-page count is a
+            # different quantity and is kept under its own name.
+            "shares_diluted": "shares_diluted",
+            "shares_outstanding": "shares_outstanding",
         }
         value_columns = [column for column in mapping if column in raw]
         if raw.empty or not value_columns:
@@ -316,27 +322,42 @@ class LocalProvider:
         return FUNDAMENTALS.validate(frame.reset_index(drop=True))
 
     def get_filings(self, tickers, start, end) -> pd.DataFrame:
-        if not self.text_dir.exists() or not any(self.text_dir.glob("*.txt")):
+        """Earnings releases, in filing order, for the text feature block.
+
+        The corpus is deliberately one document type: the Item 2.02 press
+        release. A similarity measured across a mixture of releases and 10-Qs
+        would be measuring genre, not editorial change -- see
+        :mod:`earnings_engine.data.filing_text`.
+        """
+        if not self.text_dir.exists() or not any(self.text_dir.glob("*.txt*")):
             raise ProviderError(
                 "SEC filing metadata is local, but filing bodies were not bulk-downloaded. "
-                "Offline research will skip text features explicitly; it will not contact SEC."
+                "Run `eee download --text-only`, or leave features.text off: offline research "
+                "will skip text features explicitly; it will not contact SEC."
             )
         raw = self._load("sec_filings").copy()
         wanted = {str(ticker).upper() for ticker in tickers}
         filed = pd.to_datetime(raw["filing_date"], errors="coerce")
+        is_release = raw["form"].isin(["8-K", "8-K/A"]) & raw["items"].map(is_earnings_release)
         raw = raw.loc[
             raw["ticker"].astype("string").str.upper().isin(wanted)
             & filed.between(pd.Timestamp(start), pd.Timestamp(end))
-            & raw["form"].isin(["10-K", "10-K/A", "10-Q", "10-Q/A", "20-F", "40-F"])
+            & is_release
         ].copy()
         if raw.empty:
-            raise ProviderError("local SEC filings file has no requested filings")
+            raise ProviderError("local SEC filings file has no earnings releases in this window")
         paths = [
-            str(self.text_dir / f"{accession}.txt")
-            if (self.text_dir / f"{accession}.txt").exists()
+            str(self.text_dir / f"{accession}.txt.gz")
+            if (self.text_dir / f"{accession}.txt.gz").exists()
             else ""
             for accession in raw["accession"]
         ]
+        # A release whose body was never acquired would enter the corpus as an
+        # empty string and drag every similarity around it towards zero.
+        raw = raw.loc[[bool(path) for path in paths]]
+        paths = [path for path in paths if path]
+        if raw.empty:
+            raise ProviderError("no earnings-release bodies were acquired for these tickers")
         frame = pd.DataFrame(
             {
                 "ticker": raw["ticker"],
@@ -350,10 +371,10 @@ class LocalProvider:
         return FILINGS.validate(frame.reset_index(drop=True))
 
     def get_text(self, accession: str) -> str:
-        path = self.text_dir / f"{accession}.txt"
-        if not path.exists():
+        text = read_text(self.text_dir, accession)
+        if not text:
             raise ProviderError(
                 f"filing text was not acquired for {accession}; offline mode will leave its "
                 "text features missing rather than contact SEC or fabricate content"
             )
-        return path.read_text(encoding="utf-8", errors="replace")
+        return text
