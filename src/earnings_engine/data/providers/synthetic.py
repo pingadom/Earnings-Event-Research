@@ -27,6 +27,7 @@ up the way they do in real data, with a signal-to-noise ratio you control.
 
 from __future__ import annotations
 
+import zlib
 from dataclasses import dataclass
 
 import numpy as np
@@ -82,7 +83,13 @@ class SyntheticSpec:
     jump_coef: float = 0.020
     #: Total post-announcement drift per unit of surprise, spread over
     #: ``drift_days`` sessions. Set to 0.0 for the null-hypothesis fixture.
-    drift_coef: float = 0.008
+    #:
+    #: The default is deliberately larger than anything documented in real
+    #: equity data -- published PEAD estimates are a fraction of this, and have
+    #: decayed further since the mid-2000s. It is set high so that the demo
+    #: separates unambiguously from the null control over a short sample. Do
+    #: not read the demo's Sharpe ratio as a forecast of anything.
+    drift_coef: float = 0.020
     drift_days: int = 20
     #: Probability an announcement is released before the open.
     p_bmo: float = 0.45
@@ -371,7 +378,12 @@ class SyntheticProvider:
         if accession not in self._filing_z:
             raise KeyError(f"unknown accession {accession!r}")
         z = self._filing_z[accession]
-        rng = np.random.default_rng(abs(hash(accession)) % (2**32))
+        # zlib.crc32, not hash(): Python randomises string hashing per process
+        # (PYTHONHASHSEED), so hash() here would make the generated text -- and
+        # therefore every text feature, and therefore the whole demo -- silently
+        # irreproducible across runs.
+        seed = (zlib.crc32(accession.encode()) + self.spec.seed) % (2**32)
+        rng = np.random.default_rng(seed)
         # Length varies with the quarter: firms write more when there is more
         # to explain, which is itself part of the "Lazy Prices" effect.
         n_words = int(rng.integers(420, 700) - 60 * z)

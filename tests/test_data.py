@@ -118,6 +118,32 @@ def test_synthetic_provider_is_deterministic():
     pd.testing.assert_frame_equal(a, b)
 
 
+def test_synthetic_text_is_reproducible_across_processes():
+    """Regression: an early version seeded the text generator with hash(), which
+    Python randomises per process, making every text feature irreproducible."""
+    import subprocess
+    import sys
+
+    code = (
+        "import sys; sys.path.insert(0, 'src');"
+        "from earnings_engine.data.providers.synthetic import SyntheticProvider, SyntheticSpec;"
+        "p = SyntheticProvider(SyntheticSpec(n_tickers=3, start='2018-01-02', end='2019-12-31'));"
+        "f = p.get_filings(['SYN000'], '2018-01-02', '2019-12-31');"
+        "print(p.get_text(f['accession'].iloc[0])[:200])"
+    )
+    runs = {
+        subprocess.run(
+            [sys.executable, "-c", code],
+            capture_output=True,
+            text=True,
+            env={"PYTHONHASHSEED": str(seed), "PATH": "/usr/bin:/bin"},
+        ).stdout
+        for seed in (0, 1, 12345)
+    }
+    assert len(runs) == 1, "generated filing text depends on PYTHONHASHSEED"
+    assert runs.pop().strip()
+
+
 def test_vendor_provider_reads_a_drop_folder(tmp_path):
     from earnings_engine.data.providers.vendor import CapitalIQProvider
 
