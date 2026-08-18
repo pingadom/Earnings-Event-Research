@@ -303,3 +303,66 @@ def plot_coefficient_stability(coefficients: pd.DataFrame, top_n: int = 12,
     for t in leg.get_texts():
         t.set_color(INK)
     return _save(fig, path) or (fig, ax)
+
+
+def plot_factor_loadings(model, path: str | Path | None = None,
+                         title: str = "Factor exposures and alpha"):
+    """Loadings with 95% HAC confidence intervals, alpha shown separately.
+
+    Alpha is on a different scale from the loadings (annualised return versus a
+    unitless beta), so it gets its own panel rather than sharing an axis. Two
+    scales on one plot invent a comparison that is not in the data.
+    """
+    load = model.loadings
+    tstats = model.loading_tstats.replace(0, np.nan)
+    se = (load / tstats).abs()
+
+    fig, (ax_a, ax) = plt.subplots(
+        1, 2, figsize=(8.6, 3.6), gridspec_kw={"width_ratios": [1, 3.4]}
+    )
+
+    ax_a.axhline(0, color=MUTED, linewidth=1)
+    colour = POSITIVE if model.alpha_annual >= 0 else NEGATIVE
+    ax_a.bar([0], [model.alpha_annual], width=0.5, color=colour)
+    ax_a.set_xticks([0])
+    ax_a.set_xticklabels(["alpha"])
+    ax_a.annotate(f"t = {model.alpha_tstat:.2f}", (0, model.alpha_annual),
+                  textcoords="offset points",
+                  xytext=(0, 6 if model.alpha_annual >= 0 else -14),
+                  ha="center", fontsize=9, color=INK)
+    _style(ax_a, "Annualised alpha", "", "")
+    ax_a.yaxis.set_major_formatter(lambda x, _: f"{x:.0%}")
+
+    order = load.index
+    ypos = np.arange(len(order))[::-1]
+    ax.axvline(0, color=MUTED, linewidth=1)
+    ax.errorbar(load.to_numpy(), ypos, xerr=1.96 * se.to_numpy(), fmt="o",
+                color=ACCENT, markersize=6, markerfacecolor="white",
+                markeredgewidth=1.8, ecolor=ACCENT, elinewidth=1.2, capsize=0)
+    ax.set_yticks(ypos)
+    ax.set_yticklabels(order, fontsize=10)
+    _style(ax, "Factor loadings (95% HAC intervals)", "Beta", "")
+    fig.suptitle(title, color=INK, fontsize=12, x=0.01, ha="left", y=1.03,
+                 fontweight="medium")
+    fig.tight_layout()
+    return _save(fig, path) or (fig, (ax_a, ax))
+
+
+def plot_dsr_sensitivity(sens: pd.DataFrame, path: str | Path | None = None,
+                         title: str = "Deflated Sharpe vs assumed trial dispersion"):
+    """How wrong would the multiple-testing assumption have to be?"""
+    fig, ax = plt.subplots(figsize=(6.4, 3.6))
+    ax.axhline(0.95, color=POSITIVE, linewidth=1.2, linestyle="--")
+    ax.annotate("0.95 threshold", (sens["assumed_sharpe_dispersion"].iloc[0], 0.95),
+                textcoords="offset points", xytext=(4, 5), fontsize=9, color=POSITIVE)
+    ax.plot(sens["assumed_sharpe_dispersion"], sens["deflated_sharpe"], color=ACCENT,
+            linewidth=2, marker="o", markersize=5, markerfacecolor="white",
+            markeredgewidth=1.6)
+    for _, r in sens.iterrows():
+        ax.annotate(f"hurdle {r['hurdle_sharpe_annual']:.2f}",
+                    (r["assumed_sharpe_dispersion"], r["deflated_sharpe"]),
+                    textcoords="offset points", xytext=(0, -15), ha="center",
+                    fontsize=8, color=MUTED)
+    ax.set_ylim(-0.05, 1.05)
+    _style(ax, title, "Assumed dispersion of trial Sharpes (annualised)", "Deflated Sharpe ratio")
+    return _save(fig, path) or (fig, ax)

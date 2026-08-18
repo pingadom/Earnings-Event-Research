@@ -78,9 +78,37 @@ def _equity(daily: pd.DataFrame | None) -> list[dict]:
     ]
 
 
-def build_payload(result, metadata: dict) -> dict:
-    by_year = result.by_year.copy()
+def _attribution_payload(diagnostics) -> dict:
+    if diagnostics is None or diagnostics.attribution is None:
+        return {}
+    a = diagnostics.attribution
+    se = (a.loadings / a.loading_tstats.replace(0, np.nan)).abs()
     return {
+        "alphaAnnual": _clean(a.alpha_annual),
+        "alphaTstat": _clean(a.alpha_tstat),
+        "rSquared": _clean(a.r_squared),
+        "appraisal": _clean(a.appraisal_ratio),
+        "residualVol": _clean(a.residual_vol_annual),
+        "source": diagnostics.factor_source,
+        "verdict": a.verdict(),
+        "loadings": [
+            {"name": n, "beta": _clean(a.loadings[n]), "se": _clean(se.get(n, np.nan)),
+             "t": _clean(a.loading_tstats[n])}
+            for n in a.loadings.index
+        ],
+    }
+
+
+def build_payload(result, metadata: dict, diagnostics=None, dsr_sensitivity=None) -> dict:
+    by_year = result.by_year.copy()
+    deflated = {}
+    if diagnostics is not None and diagnostics.deflated:
+        deflated = {k: _clean(v) for k, v in diagnostics.deflated.items() if k != "verdict"}
+        deflated["verdict"] = diagnostics.deflated.get("verdict", "")
+    return {
+        "attribution": _attribution_payload(diagnostics),
+        "deflated": deflated,
+        "dsrSensitivity": _records(dsr_sensitivity) if dsr_sensitivity is not None else [],
         "metadata": {k: _clean(v) for k, v in metadata.items()},
         "aggregate": {k: _clean(v) for k, v in result.aggregate.items()},
         "byYear": _records(by_year),
@@ -91,10 +119,15 @@ def build_payload(result, metadata: dict) -> dict:
     }
 
 
-def write_dashboard(path: str | Path, result, metadata: dict) -> Path:
+def write_dashboard(
+    path: str | Path, result, metadata: dict, diagnostics=None, dsr_sensitivity=None
+) -> Path:
     path = Path(path)
     path.parent.mkdir(parents=True, exist_ok=True)
-    payload = json.dumps(build_payload(result, metadata), indent=None, separators=(",", ":"))
+    payload = json.dumps(
+        build_payload(result, metadata, diagnostics, dsr_sensitivity),
+        indent=None, separators=(",", ":"),
+    )
     html = _TEMPLATE.replace("__PAYLOAD__", payload)
     path.write_text(html, encoding="utf-8")
     return path
@@ -231,6 +264,12 @@ _TEMPLATE = r"""<!doctype html>
       <p class="cap">Predictions binned into twenties. On the dashed line, predicted magnitudes are exactly right; a flatter fit means the ranking holds but the scale is overconfident.</p>
       <div class="legend" id="legCal"></div>
       <div id="chartCal"></div>
+    </div>
+    <div class="card" id="cardFactors" hidden>
+      <h2>Factor exposures</h2>
+      <p class="cap">Loadings on Fama-French 5 plus momentum, with 95% HAC intervals. Alpha is on a different scale and is shown as a tile above, not on this axis.</p>
+      <div class="legend" id="legFactors"></div>
+      <div id="chartFactors"></div>
     </div>
     <div class="card">
       <h2>Cumulative return across all held-out years</h2>
@@ -521,6 +560,50 @@ function chartEq() {
     { color: c1, label: "Net of costs" }, { color: c2, label: "Gross" }]);
 }
 
+/* 5. factor loadings --------------------------------------------------- */
+function chartFactors() {
+  const at = DATA.attribution || {};
+  const d = at.loadings || [];
+  if (!d.length) return;
+  document.getElementById("cardFactors").hidden = false;
+  const host = document.getElementById("chartFactors");
+  const W = 560, H = 40 + 34 * d.length, m = { t: 14, r: 20, b: 34, l: 74 };
+  const s = svg(host, W, H);
+  const iw = W - m.l - m.r, ih = H - m.t - m.b;
+
+  const vals = d.flatMap(r => [r.beta - 1.96 * (r.se || 0), r.beta + 1.96 * (r.se || 0)]);
+  const [dlo, dhi] = domain(vals, { symmetric: true, padTop: 0.12, padBottom: 0.12 });
+  const ticks = ticksIn(dlo, dhi, 5);
+  const x = v => m.l + (v - dlo) / (dhi - dlo) * iw;
+  ticks.forEach(t => {
+    s.appendChild(el("line", { class: "gridline", x1: x(t), x2: x(t), y1: m.t, y2: m.t + ih }));
+    s.appendChild(el("text", { class: "tick", x: x(t), y: m.t + ih + 18, "text-anchor": "middle" },
+      t.toFixed(2)));
+  });
+  s.appendChild(el("line", { class: "axisline", x1: x(0), x2: x(0), y1: m.t, y2: m.t + ih }));
+
+  const c1 = cssv("--s1"), surf = cssv("--surface");
+  const step = ih / d.length;
+  d.forEach((r, i) => {
+    const y = m.t + step * (i + 0.5);
+    const se = r.se || 0;
+    s.appendChild(el("line", { x1: x(r.beta - 1.96 * se), x2: x(r.beta + 1.96 * se),
+      y1: y, y2: y, stroke: c1, "stroke-width": 1.4, opacity: .6 }));
+    s.appendChild(el("circle", { cx: x(r.beta), cy: y, r: 5, fill: surf, stroke: c1,
+      "stroke-width": 2 }));
+    s.appendChild(el("text", { class: "dlab", x: m.l - 10, y: y + 4, "text-anchor": "end" },
+      r.name));
+    const hit = el("rect", { class: "hit", x: m.l, y: y - step / 2, width: iw, height: step });
+    hoverable(hit, `<b>${r.name}</b><br><span class="k">beta</span> ${fmt(r.beta, 3)}` +
+      `<br><span class="k">t</span> ${fmt(r.t, 2)}`);
+    s.appendChild(hit);
+  });
+  s.appendChild(el("text", { class: "alab", x: m.l + iw / 2, y: H - 4, "text-anchor": "middle" },
+    "Loading (beta)"));
+  legend(document.getElementById("legFactors"), [
+    { color: c1, label: "Loading with 95% HAC interval" }]);
+}
+
 /* tiles, table, chrome ------------------------------------------------- */
 function tiles() {
   const a = DATA.aggregate, host = document.getElementById("tiles");
@@ -533,6 +616,21 @@ function tiles() {
     { label: "Calibration slope", value: fmt(a.mean_calibration_slope, 2), note: "1.00 = perfectly scaled" },
     { label: "Max drawdown", value: pct(a.stitched_max_drawdown), note: "net of costs" },
   ];
+  const at = DATA.attribution || {};
+  if (at.alphaAnnual !== undefined && at.alphaAnnual !== null) {
+    items.push({
+      label: "Alpha vs FF5 + momentum", value: pct(at.alphaAnnual),
+      note: `t = ${fmt(at.alphaTstat, 2)} · R² ${fmt(at.rSquared, 2)}`, cls: sign(at.alphaAnnual),
+    });
+  }
+  const df = DATA.deflated || {};
+  if (df.dsr !== undefined && df.dsr !== null) {
+    items.push({
+      label: df.not_deflated ? "Sharpe confidence (undeflated)" : "Deflated Sharpe",
+      value: fmt(df.dsr, 3),
+      note: df.not_deflated ? `${df.n_trials} trials, dispersion unknown` : `after ${df.n_trials} trials`,
+    });
+  }
   host.innerHTML = items.map(i => `<div class="tile"><div class="label">${i.label}</div>` +
     `<div class="value ${i.cls || ""}">${i.value}</div><div class="note">${i.note}</div></div>`).join("");
 }
@@ -575,10 +673,14 @@ function chrome() {
     `Generated by <code>eee holdout</code>. Training for each year uses only events whose outcome ` +
     `was already resolved before that year opened, with a ${m.embargo_days ?? 25}-session embargo. ` +
     `Positions open one session after the announcement, so the untradable opening gap is excluded. ` +
-    `Returns are net of a square-root market-impact cost model.`;
+    `Returns are net of a square-root market-impact cost model.` +
+    ((DATA.attribution && DATA.attribution.source)
+      ? ` Factor attribution uses ${DATA.attribution.source}.` : "");
 }
 
-function renderAll() { chrome(); tiles(); chartIc(); chartSpread(); chartCal(); chartEq(); table(); }
+function renderAll() {
+  chrome(); tiles(); chartIc(); chartSpread(); chartCal(); chartFactors(); chartEq(); table();
+}
 
 const btn = document.getElementById("themeBtn");
 function applyTheme(t) {

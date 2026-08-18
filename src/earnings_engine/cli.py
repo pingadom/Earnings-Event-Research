@@ -86,6 +86,24 @@ def build_parser() -> argparse.ArgumentParser:
         help="synthetic only: planted drift per unit of surprise; 0 runs the null control",
     )
     hold.add_argument("--label", default=None, help="name used in the report title")
+    hold.add_argument(
+        "--factor-file",
+        default=None,
+        help="Ken French daily factors (csv/parquet). Without it, synthetic proxies are used "
+             "and the attribution is labelled as such.",
+    )
+    hold.add_argument("--trials", default="conf/trials.json", help="specification log for the "
+                      "deflated Sharpe ratio")
+    hold.add_argument("--fm-frequency", default="M", help="Fama-MacBeth period, e.g. M or D")
+
+    # Acquisition lives in scripts/download_data.py and is surfaced here so the
+    # project has one entry point rather than two. The flags are that script's,
+    # forwarded verbatim.
+    sub.add_parser(
+        "download",
+        help="pull real data into data/raw (see: eee download --help)",
+        add_help=False,
+    )
 
     vend = sub.add_parser("vendor-check", help="validate the vendor drop folder")
     vend.add_argument("--config", default=None)
@@ -94,6 +112,14 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 def main(argv: list[str] | None = None) -> int:
+    raw_argv = list(sys.argv[1:] if argv is None else argv)
+    if raw_argv and raw_argv[0] == "download":
+        # Forward everything after the subcommand straight to the acquisition
+        # CLI, so `eee download --help` shows that tool's real options.
+        from .data.download_cli import main as download_main
+
+        return download_main(raw_argv[1:])
+
     args = build_parser().parse_args(argv)
     setup_logging(quiet=getattr(args, "quiet", False))
     cfg = load_config(getattr(args, "config", None))
@@ -172,6 +198,8 @@ def _holdout(args, cfg) -> int:
     """Train through year Y-1, freeze, predict year Y. Repeat for every year."""
     import json as _json
 
+    from .analysis import run_diagnostics
+    from .analysis.multiple_testing import TrialsLog
     from .holdout import run_annual_holdouts
     from .pipeline import build_dataset, build_feature_panel, run_event_study, save_stage
     from .reporting.dashboard import write_dashboard
@@ -179,7 +207,9 @@ def _holdout(args, cfg) -> int:
         plot_calibration,
         plot_car_by_quantile,
         plot_coefficient_stability,
+        plot_dsr_sensitivity,
         plot_equity_curve,
+        plot_factor_loadings,
         plot_holdout_ic,
         plot_predicted_vs_realised,
     )
@@ -250,6 +280,41 @@ def _holdout(args, cfg) -> int:
             result.backtest.daily, path=figures_dir / "equity_curve.png"
         )
 
+    # --- post-hoc diagnostics: is it alpha, is it new, does a second method agree?
+    diagnostics = None
+    if result.backtest is not None:
+        from .features.assemble import feature_columns
+
+        feats = [
+            c for c in feature_columns(panel)
+            if not c.startswith(("car_", "bhar_"))
+        ]
+        diagnostics = run_diagnostics(
+            result.backtest.daily["net"],
+            panel_frame=panel,
+            features=feats,
+            target=result.target,
+            return_panel=dataset.panel,
+            factor_file=args.factor_file,
+            trials_path=args.trials,
+            fm_frequency=args.fm_frequency,
+            seed=cfg.seed,
+        )
+        if diagnostics.attribution is not None:
+            figures["Factor exposures and alpha"] = plot_factor_loadings(
+                diagnostics.attribution, path=figures_dir / "factor_loadings.png"
+            )
+            save_stage(diagnostics.attribution.summary_frame(), out, "factor_attribution")
+        trials = TrialsLog.load(args.trials)
+        if trials.n:
+            sens = trials.deflate_sensitivity(result.backtest.daily["net"])
+            save_stage(sens, out, "dsr_sensitivity")
+            figures["Deflated Sharpe vs assumed trial dispersion"] = plot_dsr_sensitivity(
+                sens, path=figures_dir / "dsr_sensitivity.png"
+            )
+        if diagnostics.fama_macbeth is not None:
+            save_stage(diagnostics.fama_macbeth.summary, out, "fama_macbeth")
+
     sections = {}
     if args.provider == "synthetic":
         sections["⚠️ This is synthetic data"] = (
@@ -270,6 +335,14 @@ def _holdout(args, cfg) -> int:
             index=False
         )
 
+    if diagnostics is not None:
+        sections.update(diagnostics.to_markdown())
+        if trials.n:
+            sections["Multiple testing"] = sections.get("Multiple testing", "") + (
+                "\n\n**Sensitivity to the dispersion assumption**\n\n"
+                + sens.round(3).to_markdown(index=False)
+            )
+
     metadata = {
         "label": label,
         "holdout_years": years,
@@ -281,6 +354,15 @@ def _holdout(args, cfg) -> int:
         "holding_days": cfg.backtest.holding_days,
         **dataset.meta,
     }
+    if diagnostics is not None and diagnostics.attribution is not None:
+        metadata["alpha_annual"] = diagnostics.attribution.alpha_annual
+        metadata["alpha_tstat"] = diagnostics.attribution.alpha_tstat
+        metadata["factor_r2"] = diagnostics.attribution.r_squared
+        metadata["appraisal_ratio"] = diagnostics.attribution.appraisal_ratio
+    if diagnostics is not None and diagnostics.deflated:
+        metadata["deflated_sharpe"] = diagnostics.deflated.get("dsr")
+        metadata["n_trials"] = diagnostics.deflated.get("n_trials")
+
     (out / "holdout_summary.json").write_text(
         _json.dumps({"metadata": metadata, "aggregate": result.aggregate}, indent=2, default=str)
     )
@@ -291,7 +373,10 @@ def _holdout(args, cfg) -> int:
         figures=figures,
         metadata=metadata,
     )
-    dashboard = write_dashboard(out / "dashboard.html", result, metadata)
+    dashboard = write_dashboard(
+        out / "dashboard.html", result, metadata, diagnostics,
+        sens if (diagnostics is not None and trials.n) else None,
+    )
 
     print(result.summary_markdown())
     print()
