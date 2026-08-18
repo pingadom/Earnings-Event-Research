@@ -1,4 +1,16 @@
-"""Column contracts for the durable files written under ``data/raw``."""
+"""Column contracts for the durable files written under ``data/raw``.
+
+This is the **storage** layer: what a downloaded Parquet file on disk must
+contain, including provenance columns (``source``, ``accession``,
+``timestamp_quality``) that exist so a row can be traced back to the request
+that produced it.
+
+Not to be confused with :mod:`earnings_engine.utils.frames`, which is the
+**pipeline** layer: what a frame must look like as it passes between research
+stages. The two differ deliberately -- storage keeps everything a vendor gave
+us, the pipeline keeps only what the research needs, in canonical units. The
+adapters in :mod:`earnings_engine.data.providers.local` map one onto the other.
+"""
 
 from __future__ import annotations
 

@@ -1,5 +1,10 @@
 """Schema contracts for the tidy frames that move between pipeline stages.
 
+This is the **pipeline** layer. For the *storage* contracts that govern
+downloaded files under ``data/raw`` -- which carry extra provenance columns and
+raw vendor units -- see :mod:`earnings_engine.data.schemas`. Providers map from
+storage into these frames; nothing downstream sees the storage shape.
+
 Every stage declares the columns and dtypes it emits, and validation runs at
 the boundary. This is cheap insurance: the failure mode it prevents is a
 silently-misaligned join that produces a plausible-looking Sharpe ratio.
