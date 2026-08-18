@@ -107,3 +107,44 @@ def test_normalisation_leaves_no_cross_sectional_mean(events, fundamentals):
     normed = cross_sectional_normalise(panel, cols, method="zscore", min_obs=15)
     means = normed.groupby(normed["t0"].dt.to_period("M"))["revenue_growth_yoy"].mean().dropna()
     assert means.abs().max() < 1e-9
+
+
+def test_a_period_with_no_flow_item_is_not_a_reporting_quarter():
+    """Balance-sheet instants dated outside a fiscal period must not add rows.
+
+    The cover-page share count is stamped "as of" the filing date, weeks after
+    the quarter it accompanies. Left in, it inserts an extra row between real
+    quarters and every ``t-4`` comparison lands on the wrong one.
+    """
+    from earnings_engine.features.fundamentals import _pivot
+
+    stamp = pd.Timestamp("2021-01-01", tz="UTC")
+    rows = []
+    for index, period in enumerate(pd.date_range("2020-03-31", periods=5, freq="QE")):
+        rows.append(("AAA", period, "revenue", 100.0 + index, stamp))
+        rows.append(("AAA", period, "total_assets", 900.0, stamp))
+    # A phantom: an instant three weeks after the first quarter ended.
+    rows.append(("AAA", pd.Timestamp("2020-04-21"), "total_assets", 950.0, stamp))
+    frame = pd.DataFrame(
+        rows, columns=["ticker", "period_end", "item", "value", "available_from_utc"]
+    )
+    out = _pivot(frame)
+    assert len(out) == 5
+    assert pd.Timestamp("2020-04-21") not in set(out["period_end"])
+
+
+def test_year_ago_comparisons_land_on_the_same_quarter():
+    """With phantoms removed, ``t-4`` is genuinely one year back."""
+    stamp = pd.Timestamp("2021-01-01", tz="UTC")
+    periods = pd.date_range("2019-03-31", periods=8, freq="QE")
+    rows = []
+    for index, period in enumerate(periods):
+        rows.append(("AAA", period, "revenue", 100.0 * (1.1**index), stamp))
+        rows.append(("AAA", pd.Timestamp(period) + pd.Timedelta(days=20), "shares_outstanding",
+                     5.0, stamp))
+    frame = pd.DataFrame(
+        rows, columns=["ticker", "period_end", "item", "value", "available_from_utc"]
+    )
+    out = build_fundamental_features(frame, winsorize=None)
+    growth = out.loc[out["period_end"] == periods[4], "revenue_growth_yoy"].iloc[0]
+    assert growth == pytest.approx(1.1**4 - 1, rel=1e-9)

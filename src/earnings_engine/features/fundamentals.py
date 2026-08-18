@@ -45,11 +45,47 @@ FUNDAMENTAL_FEATURES: dict[str, str] = {
 }
 
 
+#: Items that describe an *interval* rather than an instant. A (ticker,
+#: period_end) row carrying none of them did not come from a reporting period
+#: at all -- see ``_pivot``.
+_FLOW_ITEMS = (
+    "revenue",
+    "gross_profit",
+    "operating_income",
+    "net_income",
+    "eps_diluted",
+    "cfo",
+    "capex",
+    "shares_diluted",
+)
+
+
 def _pivot(fundamentals: pd.DataFrame) -> pd.DataFrame:
-    """Long -> wide per (ticker, period_end), keeping the publication stamp."""
+    """Long -> wide per (ticker, period_end), keeping the publication stamp.
+
+    Rows are dropped where the period carries no income-statement or cash-flow
+    item, because every feature here reaches back four rows for "the same
+    quarter last year" and that arithmetic is only true if consecutive rows are
+    consecutive quarters. A balance-sheet instant tagged on some other date --
+    a cover-page share count, an acquisition-date measurement -- would insert
+    an extra row and silently shift every year-ago comparison off by one. This
+    is a guard against a class of bug, not a single source of it.
+    """
     wide = fundamentals.pivot_table(
         index=["ticker", "period_end"], columns="item", values="value", aggfunc="last"
     )
+    present = [item for item in _FLOW_ITEMS if item in wide.columns]
+    if present:
+        is_period = wide[present].notna().any(axis=1)
+        dropped = int((~is_period).sum())
+        if dropped:
+            log.info(
+                "fundamentals: dropped %d of %d (ticker, period_end) rows carrying no flow "
+                "item -- these are instants dated outside any reporting period",
+                dropped,
+                len(wide),
+            )
+        wide = wide.loc[is_period]
     stamp = fundamentals.groupby(["ticker", "period_end"])["available_from_utc"].max()
     out = wide.join(stamp).reset_index()
     return out.sort_values(["ticker", "period_end"])

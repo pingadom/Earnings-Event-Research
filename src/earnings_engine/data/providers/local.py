@@ -283,10 +283,19 @@ class LocalProvider:
             "capital_expenditure": "capex",
             "free_cash_flow": "free_cash_flow",
             # Weighted-average diluted shares is the denominator earnings per
-            # share is actually computed on. The cover-page count is a
-            # different quantity and is kept under its own name.
+            # share is actually computed on, and it is dated to the fiscal
+            # period like every other line item.
+            #
+            # ``shares_outstanding`` is deliberately absent. It comes from the
+            # 10-Q cover page and is stamped "as of" the *filing* date, which
+            # is two to three weeks after the period it accompanies. Emitting
+            # it created a (ticker, period_end) row on a date no fiscal quarter
+            # ever ended -- 68 of Apple's 127 periods were phantoms of exactly
+            # this kind -- and every feature that looks back four rows for "the
+            # same quarter last year" was counting those phantoms. It stays in
+            # ``fundamentals.parquet`` for provenance; it does not enter the
+            # research frame.
             "shares_diluted": "shares_diluted",
-            "shares_outstanding": "shares_outstanding",
         }
         value_columns = [column for column in mapping if column in raw]
         if raw.empty or not value_columns:
