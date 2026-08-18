@@ -9,6 +9,20 @@ moves and no code changed, something is not deterministic, and that is worth
 knowing before a result is defended.
 
     make reproduce        # or: python scripts/reproduce.py
+
+Scope: the synthetic runs only. Those need no network and no vendor data, so
+they reproduce anywhere. The real-data study in `docs/results.md` Part I depends
+on `data/raw`, which is not committed (licensing and size), and is reproduced
+with:
+
+    eee download --start 2014-06-01
+    eee holdout --provider local --config conf/config-real.yaml \
+                --factor-file data/raw/fama_french_daily.csv.gz \
+                --out reports/holdout_real
+
+Its inputs come from live endpoints that revise history -- Yahoo re-adjusts for
+corporate actions, SEC amends filings -- so a hash-identical rerun is not a
+promise anyone can make. The synthetic runs are where determinism is enforced.
 """
 
 from __future__ import annotations

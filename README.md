@@ -27,11 +27,35 @@ universe → prices/events/fundamentals/filings
          → sector-neutral long/short book → transaction costs → evaluation
 ```
 
-**[→ Results: rolling annual holdouts](docs/results.md)** — train through year
-*Y−1*, freeze the model, predict year *Y*, compare with what happened. Six
-independent held-out years, reported next to an identical run on data with no
-effect planted in it, so you can see what the same pipeline produces when there
-is nothing to find.
+### [→ Results](docs/results.md)
+
+**The headline is a null.** 114 S&P 500 companies, **3,323 real earnings
+announcements** timestamped from SEC filings, held out one year at a time
+2019–2024:
+
+| | |
+|---|---:|
+| Mean out-of-sample IC | 0.024 (t = 1.17) |
+| Years with positive IC | 4 / 6 |
+| Net Sharpe after costs | −0.61 (t = −1.16) |
+| Alpha vs FF5 + momentum | −0.81% (t = −1.36) |
+| **IC trend per year** | **−0.023 (p = 0.033)** |
+
+The hypothesis is **not supported on this sample**. The substantive finding is
+the decay: positive 2019–2022, negative 2023–2024, significant at 5%. That is
+what the literature predicts for an anomaly documented since 1968 and widely
+traded since the mid-2000s.
+
+Three of the five falsification criteria written down *before* the run are met.
+The factor regression finds no alpha but does find unintended value and
+investment tilts. Fama–MacBeth agrees with the portfolio sort. And
+[§R5](docs/results.md#r5-the-limitation-that-matters-most) quantifies the bias
+that survived: Yahoo serves no price history for **61% of the index-deleted
+names** in the sample, against 5% of survivors — including SIVB and FRC.
+
+The same pipeline run on synthetic data with a *known* planted effect recovers
+it in 6/6 years at a net Sharpe of 4.8, and returns 0.02 / 0.37 when nothing is
+planted. That contrast is why the null above is worth believing.
 
 ---
 
@@ -209,7 +233,7 @@ src/earnings_engine/
   analysis/fama_macbeth.py  cross-sectional regressions, second methodology
   reporting/dashboard.py    self-contained interactive HTML, no dependencies
   cli.py                    eee demo | holdout | download | event-study | research
-tests/                      162 tests, offline, including leak regressions
+tests/                      168 tests, offline, including leak regressions
 docs/results.md             the holdout evidence, with its null control
 docs/manifest.json          SHA-256 of every published artefact
 scripts/reproduce.py        make reproduce | make verify

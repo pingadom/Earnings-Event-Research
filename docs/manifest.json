@@ -9,26 +9,34 @@
       "sklearn": "1.8.0",
       "matplotlib": "3.10.9"
     },
-    "git_commit": "0e15cbcc3a0259c12e16c85d2afc1bd587cb5e0c",
+    "git_commit": "209350de5881b2ec56bef2b0e9f159320169407a",
     "git_dirty": true,
-    "generated_at_utc": "2026-08-18T18:55:58+00:00"
+    "generated_at_utc": "2026-08-18T20:24:22+00:00"
   },
   "artefacts": {
     "reports/holdout/holdout_by_year.csv": {
-      "sha256": "1e1a4a64ee09d70ad3f42e5449c5607fde71a70122fece57032c4c80d8e7df48",
+      "sha256": "a19e15de3355d912c542bd2d18b81be43b7275cb01ecc564d3bab4f58c4eed9f",
       "bytes": 2771
     },
     "reports/holdout_null/holdout_by_year.csv": {
-      "sha256": "93c2f9dba629f22c5983ab05bfe149913166654ae2f10e1f82adaed3c804bdb0",
+      "sha256": "e3d70b61f788ab8396572a02b328ae06bda4b63e9ce2ae1b2afe3f8c6bcaaaa4",
       "bytes": 2845
     },
+    "reports/holdout_real/holdout_by_year.csv": {
+      "sha256": "c2c0033cbd4528dbdf034dcecf9150f6db243f68c76eb08000c12c4f6f47447a",
+      "bytes": 2782
+    },
     "reports/holdout/holdout_summary.json": {
-      "sha256": "4b34889eef9e1475a96f61f9470978fc8c702567b09bd8c68b281b504a9b9ee7",
-      "bytes": 1433
+      "sha256": "d463da4c7b89d44b2af2f8f0148ec6f823226f4f4bf37e6dadeebbff9622d7eb",
+      "bytes": 1434
     },
     "reports/holdout_null/holdout_summary.json": {
-      "sha256": "1fe2b6947d943ea81cfbbbbee5a1f07f413c6efbdf44b98560366e088645526a",
-      "bytes": 1458
+      "sha256": "1e5f4f0d399cc99c67e416862bad993a0f6ae175aaa165fe8ac73a8c96cdece7",
+      "bytes": 1459
+    },
+    "reports/holdout_real/holdout_summary.json": {
+      "sha256": "9a80f8fa44b02f32082c14e96ea4b29b51fdea3d41199019668d9c115b727245",
+      "bytes": 1464
     },
     "reports/demo/significance.csv": {
       "sha256": "2072c7cf238913ca4a13f87ed3d0c7bd600e5b66c855ea949956f7e7adc8139e",
@@ -46,13 +54,21 @@
       "sha256": "f2b8c12bb326dd30702d74f20ad4973e08bc177f169c66d59bd6361dfc549e5c",
       "bytes": 497
     },
+    "reports/holdout_real/factor_attribution.csv": {
+      "sha256": "b1e296bdc837a65f11b65031e280cd6e70ddf29edbace1f987970f1c1305abc7",
+      "bytes": 495
+    },
     "reports/holdout/fama_macbeth.csv": {
-      "sha256": "9f73f93b5fb5fef3cb4b6c1460d3b88f9b8d554b7eaa931559da0e376d130fb0",
-      "bytes": 1143
+      "sha256": "006ca7e063b18fbfdef06d01ddcde5696135d764a272b609f199139dc63b0f68",
+      "bytes": 1145
     },
     "reports/holdout_null/fama_macbeth.csv": {
-      "sha256": "5a03f7a59c8c325cae84d4e4205c18cbfa3094a565221f772293dd49f95d0cb4",
-      "bytes": 714
+      "sha256": "e1cdda71bb8b87908bd0773349d13b308455558165bf448cba9ba3cc2ab7c19e",
+      "bytes": 710
+    },
+    "reports/holdout_real/fama_macbeth.csv": {
+      "sha256": "1092096d932921f0416094c4d5769ee60c2b3c0e8114c570ee317c3e42a65028",
+      "bytes": 1133
     },
     "reports/holdout/dsr_sensitivity.csv": {
       "sha256": "ddb59e3bf15b82f020fb80541441ac36d4caa95e964a71674d53e57a74f57056",
@@ -61,6 +77,10 @@
     "reports/holdout_null/dsr_sensitivity.csv": {
       "sha256": "26ef3f60bb4a2c16e54e4f0adeb219393d27a3a1fc6e11a637800ec29d4917b1",
       "bytes": 238
+    },
+    "reports/holdout_real/dsr_sensitivity.csv": {
+      "sha256": "3ec59fcc728e51b297b181c202448dc1ebc08497b319193f08a2266f1d41586d",
+      "bytes": 243
     },
     "reports/demo/figures/car_by_quantile.png": {
       "sha256": "7df4ba6c8d9489d19458206e82aec5cdb04e1a2dd8c008efc5c14ae39d02dbb9",
@@ -146,9 +166,41 @@
       "sha256": "1121283848e10233635bcd357d4839c719b3bb037d7a72398474a553f90f9d17",
       "bytes": 35782
     },
+    "reports/holdout_real/figures/calibration.png": {
+      "sha256": "7398442395bedfdcdb761d2fca13e5014f3651f46282bf0ff8db7e1be883abac",
+      "bytes": 69386
+    },
+    "reports/holdout_real/figures/car_by_quantile.png": {
+      "sha256": "36882f60e4ad1dc1f64821bbce956b7833474cb3ac12d53fc7b0b8a67b955bd1",
+      "bytes": 120667
+    },
+    "reports/holdout_real/figures/coefficient_stability.png": {
+      "sha256": "898b767649e7af708d09894c5a132423eb528edbb062ab0870b3a68626aa8a8a",
+      "bytes": 83192
+    },
+    "reports/holdout_real/figures/dsr_sensitivity.png": {
+      "sha256": "c73c8e4fa5c7a526a480404522b0c8ef9eb9f234c11fa4dbca40b25cf505cc01",
+      "bytes": 44817
+    },
+    "reports/holdout_real/figures/equity_curve.png": {
+      "sha256": "85baa34b9ec6f3c860daf82da313946beed82236aff483971c67a189bd55e174",
+      "bytes": 77985
+    },
+    "reports/holdout_real/figures/factor_loadings.png": {
+      "sha256": "bda7e8903a86724ed8e4cfc5f17bc27d69814487302bb3fbcdc4908d0b6c219e",
+      "bytes": 51048
+    },
+    "reports/holdout_real/figures/holdout_ic.png": {
+      "sha256": "b4d99e30bfa4ac868638e9be9304cd5e60808944dbb18f1fdcefccc105109aba",
+      "bytes": 39979
+    },
+    "reports/holdout_real/figures/predicted_vs_realised.png": {
+      "sha256": "603afd94aea9238de9257825eab284bd2f7f5d15ce6697da72d283248bc8f97c",
+      "bytes": 33523
+    },
     "docs/results.md": {
-      "sha256": "184acd58c605da8307c185876028efdd0e6182073821afc828cf388879fc41b6",
-      "bytes": 17669
+      "sha256": "c9313653477d982684c8a19b6decb39065dadc5283aa9cfb58c040cd4d6889d4",
+      "bytes": 25999
     },
     "conf/config.yaml": {
       "sha256": "8ad34db9697c403b62d42fc0f65977310442e07c8f3a0367e8e458dbc42edf2e",

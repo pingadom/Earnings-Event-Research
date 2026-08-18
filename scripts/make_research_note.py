@@ -34,7 +34,11 @@ from reportlab.platypus import (
 
 REPO = Path(__file__).resolve().parents[1]
 REPORTS = REPO / "reports"
-FIGURES = REPO / "docs" / "figures"
+#: Which run the note describes. The real study leads; the synthetic run is the
+#: validation behind it and is summarised rather than tabulated.
+PRIMARY = "holdout_real"
+CONTROL = "holdout_null"
+FIGURES = REPO / "docs" / "figures" / "real"
 
 INK = colors.HexColor("#111111")
 MUTED = colors.HexColor("#5c5c5c")
@@ -128,13 +132,16 @@ def figure(name: str, caption: str, width_mm: float, styles) -> list:
 # --- content ----------------------------------------------------------------
 
 def load_numbers() -> dict:
-    hold = json.loads((REPORTS / "holdout" / "holdout_summary.json").read_text())
-    null = json.loads((REPORTS / "holdout_null" / "holdout_summary.json").read_text())
-    by_year = pd.read_csv(REPORTS / "holdout" / "holdout_by_year.csv")
-    fm = pd.read_csv(REPORTS / "holdout" / "fama_macbeth.csv")
+    primary = PRIMARY if (REPORTS / PRIMARY / "holdout_summary.json").exists() else "holdout"
+    hold = json.loads((REPORTS / primary / "holdout_summary.json").read_text())
+    null = json.loads((REPORTS / CONTROL / "holdout_summary.json").read_text())
+    by_year = pd.read_csv(REPORTS / primary / "holdout_by_year.csv")
+    fm = pd.read_csv(REPORTS / primary / "fama_macbeth.csv")
+    synth = json.loads((REPORTS / "holdout" / "holdout_summary.json").read_text())
     return {
         "hold": hold["aggregate"], "meta": hold["metadata"],
         "null": null["aggregate"], "by_year": by_year, "fm": fm,
+        "synth": synth["aggregate"],
     }
 
 
@@ -145,29 +152,29 @@ def footer(canvas, doc):
     canvas.line(20 * mm, 15 * mm, A4[0] - 20 * mm, 15 * mm)
     canvas.setFont("Helvetica", 7)
     canvas.setFillColor(MUTED)
-    canvas.drawString(20 * mm, 10.5 * mm, "Earnings Event Research · synthetic-data validation")
-    canvas.drawRightString(A4[0] - 20 * mm, 10.5 * mm, f"Page {doc.page} of 2")
+    canvas.drawString(20 * mm, 10.5 * mm, "Earnings Event Research · S&P 500, 2019-2024 holdouts")
+    canvas.drawRightString(A4[0] - 20 * mm, 10.5 * mm, f"Page {doc.page}")
     canvas.restoreState()
 
 
 def build(out_path: Path) -> Path:
     st = build_styles()
     n = load_numbers()
-    h, nu, by = n["hold"], n["null"], n["by_year"]
+    h, nu, by, sy = n["hold"], n["null"], n["by_year"], n["synth"]
     W = A4[0] - 40 * mm
 
     doc = SimpleDocTemplate(
         str(out_path), pagesize=A4,
         leftMargin=20 * mm, rightMargin=20 * mm, topMargin=17 * mm, bottomMargin=20 * mm,
-        title="Post-earnings drift: a validated research pipeline",
+        title="Does earnings information predict abnormal returns? A null result",
         author="Aaryan H.", subject="Quantitative equity research",
     )
     S = []
 
     S.append(para("Does earnings information predict abnormal returns?", st["title"]))
     S.append(para(
-        "Building the pipeline so that the answer can be trusted — and proving it on data "
-        "where the answer is known.", st["subtitle"]))
+        "A null result on 3,323 S&P 500 announcements, and the machinery built to make that "
+        "answer trustworthy.", st["subtitle"]))
     S.append(para(
         f"Aaryan H. &nbsp;·&nbsp; {date.today():%B %Y} &nbsp;·&nbsp; "
         f'<a href="{REPO_URL}" color="#0b6bcb">{REPO_URL.replace("https://", "")}</a>',
@@ -177,17 +184,23 @@ def build(out_path: Path) -> Path:
     S.append(para("ABSTRACT", st["h"]))
     S.append(para(
         "Post-earnings-announcement drift is among the most-studied anomalies in finance and "
-        "among the easiest to reproduce spuriously. This note describes an end-to-end research "
-        "engine — point-in-time data acquisition, event alignment, abnormal-return measurement, "
-        "purged walk-forward modelling, and a sector-neutral book net of costs — and validates "
-        "it on a synthetic market whose data-generating process is known. Across six rolling "
-        f"annual holdouts the model attains a mean out-of-sample rank IC of {h['mean_ic']:.3f} "
-        f"(positive in {h['positive_ic_years']}/{h['n_years']} years) and a net Sharpe of "
-        f"{h['stitched_sharpe_net']:.2f}. Run identically on data with <i>no</i> effect planted, "
-        f"the same pipeline returns an IC of {nu['mean_ic']:.3f} and a net Sharpe of "
-        f"{nu['stitched_sharpe_net']:.2f}. That contrast, not the headline number, is the result: "
-        "it establishes that the machinery detects a signal when one exists and does not "
-        "manufacture one when it does not.", st["abstract"]))
+        "among the easiest to reproduce spuriously. This note tests whether information in "
+        f"earnings releases predicts short-horizon abnormal returns across {n['meta'].get('n_events', 0):,} "
+        "announcements by 114 S&amp;P 500 companies, timestamped to the minute from SEC filings, "
+        "with each year from 2019 to 2024 held out and predicted by a model frozen before it "
+        f"began. <b>It does not.</b> Mean out-of-sample rank IC is {h['mean_ic']:.3f} "
+        f"(t = {h['ic_tstat_across_years']:.2f}), the sector-neutral book returns a net Sharpe of "
+        f"{h['stitched_sharpe_net']:.2f}, and alpha against Fama–French five factors plus momentum "
+        f"is {n['meta'].get('alpha_annual', 0):.2%} (t = {n['meta'].get('alpha_tstat', 0):.2f}). "
+        f"The substantive finding is decay: annual IC falls "
+        f"{abs(h.get('ic_trend_per_year', 0)):.3f} per year "
+        f"(p = {h.get('ic_trend_p', float('nan')):.3f}), positive through 2022 and "
+        "negative after — the pattern predicted for an anomaly documented since 1968 and widely "
+        "traded since the mid-2000s. Run on synthetic data with a known planted effect the same "
+        f"pipeline recovers it in {sy['positive_ic_years']}/{sy['n_years']} years at a net Sharpe "
+        f"of {sy['stitched_sharpe_net']:.2f}; with nothing planted it returns "
+        f"{nu['mean_ic']:.3f} and {nu['stitched_sharpe_net']:.2f}. That contrast is why the null "
+        "above is worth believing rather than merely asserting.", st["abstract"]))
     S.append(HRFlowable(width="100%", thickness=0.5, color=RULE, spaceBefore=4, spaceAfter=2))
 
     S.append(para("1 · DESIGN", st["h"]))
@@ -195,16 +208,16 @@ def build(out_path: Path) -> Path:
         "For each year <i>Y</i>, the model is fitted only on announcements whose 20-day outcome "
         "had fully resolved before 1 January <i>Y</i>, less a 25-session embargo; it is then "
         "frozen and used to predict every announcement in <i>Y</i>. The target is the cumulative "
-        "abnormal return from <b>one session after</b> the announcement to twenty sessions after. "
-        "Windows beginning on the announcement day contain the opening gap, which cannot be "
-        "traded, and booking it is the single largest source of overstated drift results. "
-        "Abnormal returns are computed three ways — market-adjusted, market-model, and "
-        "leave-one-out sector — because \"abnormal\" is a modelling choice and reporting one "
-        "number hides how much of the result is that choice. Features are fundamental changes "
-        "differenced year-on-year, standardised unexpected earnings, and Loughran–McDonald text "
-        "measures with their period-on-period deltas; each carries the timestamp at which it "
-        "became public, and a single guard refuses any panel where a feature post-dates the "
-        "moment of trading.", st["body"]))
+        "abnormal return from <b>one session after</b> the announcement to twenty sessions after: "
+        "windows beginning on the announcement day contain the opening gap, which cannot be "
+        "traded, and booking it is the single largest source of overstated drift results. Events "
+        "come from SEC 8-K Item 2.02 filings, so every one carries a minute-level acceptance "
+        "timestamp rather than a vendor date — 100% of the sample has a declared, not assumed, "
+        "before-open or after-close flag. Features are fundamental changes differenced "
+        "year-on-year and standardised unexpected earnings, each stamped with the moment it "
+        "became public; a single guard refuses any panel where a feature post-dates the trade. "
+        "Filing text was not downloaded, so the textual half of the hypothesis is untested here.",
+        st["body"]))
 
     S.append(para("2 · SIX HELD-OUT YEARS", st["h"]))
     rows = []
@@ -224,22 +237,27 @@ def build(out_path: Path) -> Path:
         "<b>Table 1.</b> Each row is a year the model never saw in training. <i>Pred.</i> and "
         "<i>Real.</i> are the predicted and realised top-minus-bottom quintile spreads in basis "
         "points; <i>Calib.</i> is the slope of realised on predicted, where 1.00 would mean the "
-        "predicted magnitudes were exactly right.", st["caption"]))
-    S.extend(figure("predicted_vs_realised.png",
-                    "<b>Figure 1.</b> Predicted against realised quintile spread. The direction "
-                    "is right in all six years; the magnitude is optimistic in five.", 126, st))
-
+        "magnitudes were exactly right. The model predicted a 230–300 bp spread every year and "
+        "realised between −152 and +228: confident throughout, and wrong more often than not. "
+        "2020 is the only year clearing t = 2, which is what one year in six looks like under a "
+        "5% threshold.", st["caption"]))
     S.append(PageBreak())
+    S.extend(figure("predicted_vs_realised.png",
+                    "<b>Figure 1.</b> Predicted against realised top-minus-bottom quintile "
+                    "spread, by held-out year. A model with no signal still has opinions.",
+                    104, st))
 
-    S.append(para("3 · THE NULL CONTROL", st["h"]))
+    S.append(para("3 · WHY BELIEVE THE NULL", st["h"]))
     S.append(para(
-        "The same pipeline was run on a market generated with no post-announcement effect at "
-        "all. It still produces predictions, and still produces confident ones — a predicted "
-        "spread near 200 bp in every year. In 2021 it posts an IC of 0.080 at t = 3.67 with a "
-        "net Sharpe of 3.79: a textbook false positive, in data where there is provably nothing "
-        "to find. Anyone reporting a single year would have reported that one. Across all six "
-        "years the effect vanishes, which is the behaviour required of an honest pipeline.",
-        st["body"]))
+        "A null result and a broken pipeline look identical from outside, so the same code was "
+        "run twice more on synthetic markets where the answer is known in advance. With a "
+        f"post-announcement drift planted in the data it is recovered in "
+        f"{sy['positive_ic_years']}/{sy['n_years']} years at a net Sharpe of "
+        f"{sy['stitched_sharpe_net']:.2f}. With nothing planted it returns "
+        f"{nu['mean_ic']:.3f} and {nu['stitched_sharpe_net']:.2f} — yet still posts an IC of "
+        "0.080 at t = 3.67 in one individual year, a false positive in data where there is "
+        "provably nothing to find. Anyone reporting a single year would have reported that one; "
+        "the same caution applies to 2020 in Table 1.", st["body"]))
     def pair(key, fmt="{:.2f}"):
         return fmt.format(h[key]), fmt.format(nu[key])
 
@@ -257,54 +275,47 @@ def build(out_path: Path) -> Path:
         ["Newey–West t on daily P&amp;L", *pair("stitched_tstat_nw")],
     ]
     rows = [[Paragraph(c[0], st["cell"]), c[1], c[2]] for c in comp]
-    S.append(data_table(["Statistic", "Effect planted", "Null control"], rows,
+    S.append(data_table(["Statistic", "Real data", "Synthetic null"], rows,
                         [W * 0.52, W * 0.24, W * 0.24]))
-    S.append(para("<b>Table 2.</b> Identical code, identical seed, identical universe; the only "
-                  "difference is whether an effect exists in the data.", st["caption"]))
+    S.append(para("<b>Table 2.</b> The real study beside the synthetic null control. They look "
+                  "alike, which is the point: the real result is consistent with there being "
+                  "nothing to find.", st["caption"]))
 
-    rga = float(n["fm"].set_index("term").loc["revenue_growth_accel", "coefficient"])
-    S.append(para("4 · IS IT ALPHA, AND IS IT NEW?", st["h"]))
+    S.append(para("4 · ALPHA, MULTIPLE TESTING, AND A SECOND METHOD", st["h"]))
     S.append(para(
         f"Regressed on Fama–French five factors plus momentum with Newey–West errors, the book "
         f"shows an annualised alpha of {n['meta'].get('alpha_annual', 0):.2%} "
-        f"(t = {n['meta'].get('alpha_tstat', 0):.2f}) and an R<super>2</super> of "
-        f"{n['meta'].get('factor_r2', 0):.3f} — no loading significant at 5%. The caveat is "
-        "material: these are synthetic proxies built from the same panel, not Ken French data, so "
-        "the regression is demonstrated rather than the neutrality. Every specification evaluated "
-        "is logged — eight, including the two abandoned — and the deflated Sharpe is deliberately "
-        "<i>not</i> reported, because only two of the eight carry a Sharpe and a dispersion "
-        "estimated from two numbers would give a flattering hurdle. The code refuses and says so. "
-        "A Fama–MacBeth regression over 83 monthly cross-sections attributes most of the effect "
-        "to one fundamental feature "
-        f"(revenue growth acceleration, +{rga * 1e4:.0f} bp per standard deviation, t = 2.47) "
-        "and finds the text features individually "
-        "insignificant — collinearity between three measures of one latent quantity, not a "
-        "contradiction of the sort.", st["body"]))
-    S.extend(figure("calibration.png",
-                    "<b>Figure 2.</b> Predictions binned into twenties against realised outcomes. "
-                    "A fitted slope of 0.84 against a perfect 1.00: the ordering is informative, "
-                    "the magnitudes are overstated.", 72, st))
-
-    S.append(para("5 · WHAT THIS DOES NOT ESTABLISH", st["h"]))
+        f"(t = {n['meta'].get('alpha_tstat', 0):.2f}) — no alpha. What the regression does find is "
+        "significant loadings on value (HML, t = 2.54) and investment (CMA, t = 2.08): the "
+        "strategy was unintentionally buying cheap, conservatively-investing firms, which are "
+        "compensated factors available for a few basis points. Eight specifications are logged, "
+        "including the two abandoned, giving a deflated Sharpe ratio of "
+        f"{n['meta'].get('deflated_sharpe', float('nan')):.2f}. Fama–MacBeth over 60 monthly "
+        "cross-sections finds no feature significant at 5%, agreeing with the portfolio sort — "
+        "which is the outcome that should raise confidence in a null rather than lower it.",
+        st["body"]))
+    S.append(para("5 · THE LIMITATION THAT MATTERS MOST", st["h"]))
     S.append(para(
-        "The market is synthetic and its planted drift is roughly three times anything documented "
-        "in real equities — deliberately, so the demonstration clears the noise in a short sample. "
-        "Nothing here is a claim about tradable returns. Six years is six observations. The "
-        "generating process is linear, Gaussian and stationary, so recovering a linear effect says "
-        "nothing about a non-linear one. Costs are assumed rather than measured, and no capacity "
-        "analysis has been done. The null control is a single draw. On real data, the documented "
-        "decay in this anomaly since roughly 2004 means an IC near 0.03 and a net Sharpe below 1 "
-        "would be a good outcome — and a Sharpe of 4 would mean a bug.",
+        "A point-in-time universe is not enough if the price source cannot serve delisted names. "
+        "Of 150 tickers sampled at random from every S&amp;P 500 member over the period, 46 had "
+        "been deleted from the index; Yahoo returned no price history for 28 of those 46 (61%), "
+        "against 5 of 104 survivors (5%). The names lost include SIVB and FRC — Silicon Valley "
+        "Bank and First Republic, both of which failed in 2023. Survivorship bias therefore "
+        "re-enters through the data source even though the universe definition excludes it, and "
+        "its direction is knowable: the missing firms are disproportionately those that "
+        "collapsed, so the true result is probably somewhat worse than reported. Separately, SEC "
+        "XBRL tags quarterly facts inconsistently, so feature coverage runs 10–40% rather than "
+        "100%, and filing bodies were not downloaded, leaving the textual half of the hypothesis "
+        "untested. Fixing the price source needs CRSP or an equivalent with delisting coverage.",
         st["body"]))
 
     S.append(para("6 · REPRODUCIBILITY", st["h"]))
     S.append(para(
         "<font face='Courier' size='8'>make reproduce</font> regenerates every figure and number "
-        "in this note and writes a SHA-256 for each of the 36 published artefacts; "
-        "<font face='Courier' size='8'>make verify</font> re-runs and diffs against the committed "
-        "manifest, and continuous integration fails if a hash moves. The full method, the "
-        "pre-registered falsification criteria, and a catalogue of the eight ways this study "
-        f'could flatter itself are at <a href="{REPO_URL}" color="#0b6bcb">'
+        "here and hashes each artefact; <font face='Courier' size='8'>make verify</font> diffs "
+        "against the committed manifest, and CI fails if a hash moves. Method, the falsification "
+        "criteria fixed before the run (three of five are met), and a catalogue of the ways this "
+        f'study could flatter itself: <a href="{REPO_URL}" color="#0b6bcb">'
         f'{REPO_URL.replace("https://", "")}</a>.', st["body"]))
 
     doc.build(S, onFirstPage=footer, onLaterPages=footer)
