@@ -57,7 +57,8 @@ class YahooProvider:
                 auto_adjust=self.auto_adjust,
                 progress=False,
                 group_by="ticker",
-                threads=True,
+                threads=False,
+                timeout=30,
             )
             if raw is None or len(raw) == 0:
                 continue

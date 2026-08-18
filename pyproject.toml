@@ -33,6 +33,8 @@ data = [
     "beautifulsoup4>=4.12",
     "pyarrow>=14.0",       # parquet cache; the cache falls back to csv.gz without it
     "openpyxl>=3.1",       # reading Capital IQ / LSEG Workspace .xlsx exports
+    "python-dotenv>=1.0",  # local SEC identity/date configuration
+    "tqdm>=4.66",          # resumable per-ticker progress display
 ]
 # Optional statistical extras. The engine implements OLS, Newey-West and the BMP
 # test itself; statsmodels is only used by tests that cross-check those results.
@@ -76,6 +78,9 @@ ignore = [
 
 [tool.ruff.lint.per-file-ignores]
 "tests/*" = ["E501"]
+# The dashboard is one big HTML/CSS/JS template string; wrapping it at 100
+# columns would mangle the markup for no benefit.
+"src/earnings_engine/reporting/dashboard.py" = ["E501"]
 
 [tool.mypy]
 python_version = "3.10"

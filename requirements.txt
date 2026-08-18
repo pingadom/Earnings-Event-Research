@@ -1,0 +1,3 @@
+# Installs this project plus the tested acquisition and development dependencies
+# declared in pyproject.toml. Keeping versions in one place avoids drift.
+-e .[data,dev]

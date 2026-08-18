@@ -71,6 +71,22 @@ def build_parser() -> argparse.ArgumentParser:
     _add_common(research)
     research.add_argument("--provider", default="synthetic")
 
+    hold = sub.add_parser(
+        "holdout",
+        help="rolling annual holdouts: train through year Y-1, predict year Y, compare",
+    )
+    _add_common(hold)
+    hold.add_argument("--provider", default="synthetic")
+    hold.add_argument("--n-tickers", type=int, default=150)
+    hold.add_argument("--years", default="2019-2024", help="inclusive range, e.g. 2019-2024")
+    hold.add_argument(
+        "--drift",
+        type=float,
+        default=None,
+        help="synthetic only: planted drift per unit of surprise; 0 runs the null control",
+    )
+    hold.add_argument("--label", default=None, help="name used in the report title")
+
     vend = sub.add_parser("vendor-check", help="validate the vendor drop folder")
     vend.add_argument("--config", default=None)
     vend.add_argument("--provider", default="capitaliq")
@@ -93,6 +109,8 @@ def main(argv: list[str] | None = None) -> int:
         return _vendor_check(args, cfg)
     if args.command == "demo":
         return _demo(args, cfg)
+    if args.command == "holdout":
+        return _holdout(args, cfg)
     if args.command in {"ingest", "event-study", "research"}:
         return _run_with_provider(args, cfg)
     return 1
@@ -108,6 +126,8 @@ def _make_provider(name: str, cfg, **kwargs):
         return get_provider(name, vendor_dir=str(cfg.resolved_paths().vendor))
     if name == "edgar":
         return get_provider("edgar", cache_dir=str(cfg.resolved_paths().raw / "edgar"))
+    if name == "local":
+        return get_provider("local", raw_dir=str(cfg.resolved_paths().raw))
     return get_provider(name)
 
 
@@ -139,6 +159,145 @@ def _demo(args, cfg) -> int:
         spec_kwargs["drift_coef"] = args.drift
     provider = SyntheticProvider(SyntheticSpec(**spec_kwargs))
     return _pipeline(provider, cfg, args, full=True, label="synthetic demo")
+
+
+def _parse_years(spec: str) -> list[int]:
+    if "-" in spec:
+        lo, hi = spec.split("-", 1)
+        return list(range(int(lo), int(hi) + 1))
+    return [int(y) for y in spec.split(",") if y.strip()]
+
+
+def _holdout(args, cfg) -> int:
+    """Train through year Y-1, freeze, predict year Y. Repeat for every year."""
+    import json as _json
+
+    from .holdout import run_annual_holdouts
+    from .pipeline import build_dataset, build_feature_panel, run_event_study, save_stage
+    from .reporting.dashboard import write_dashboard
+    from .reporting.plots import (
+        plot_calibration,
+        plot_car_by_quantile,
+        plot_coefficient_stability,
+        plot_equity_curve,
+        plot_holdout_ic,
+        plot_predicted_vs_realised,
+    )
+    from .reporting.tables import format_stats, write_report
+
+    years = _parse_years(args.years)
+    out = Path(args.out)
+    figures_dir = out / "figures"
+    out.mkdir(parents=True, exist_ok=True)
+
+    if args.provider == "synthetic":
+        from .data.providers.synthetic import SyntheticProvider, SyntheticSpec
+
+        kw = {"n_tickers": args.n_tickers, "start": args.start, "end": args.end, "seed": cfg.seed}
+        if args.drift is not None:
+            kw["drift_coef"] = args.drift
+        provider = SyntheticProvider(SyntheticSpec(**kw))
+    else:
+        provider = _make_provider(args.provider, cfg)
+
+    tickers = args.tickers.split(",") if args.tickers else None
+    label = args.label or (
+        "synthetic null control"
+        if (args.provider == "synthetic" and args.drift == 0)
+        else f"synthetic ({args.n_tickers} names)"
+        if args.provider == "synthetic"
+        else args.provider
+    )
+
+    dataset = build_dataset(provider, cfg, args.start, args.end, tickers)
+    study = run_event_study(dataset, cfg)
+    panel = build_feature_panel(dataset, study, cfg)
+    result = run_annual_holdouts(panel, study, cfg, years)
+
+    save_stage(result.by_year, out, "holdout_by_year")
+    save_stage(result.predictions, out, "holdout_predictions")
+    if not result.coefficients.empty:
+        save_stage(result.coefficients.reset_index(names="feature"), out, "holdout_coefficients")
+
+    figures = {}
+    figures["Out-of-sample IC by held-out year"] = plot_holdout_ic(
+        result.by_year, path=figures_dir / "holdout_ic.png"
+    )
+    figures["Predicted vs realised quintile spread"] = plot_predicted_vs_realised(
+        result.by_year, path=figures_dir / "predicted_vs_realised.png"
+    )
+    figures["Calibration"] = plot_calibration(
+        result.predictions, result.target, path=figures_dir / "calibration.png"
+    )
+    signal = result.predictions.set_index("event_id")["prediction"]
+    figures["CAR by predicted quintile (held-out events only)"] = plot_car_by_quantile(
+        study.daily[study.daily["event_id"].isin(signal.index)],
+        signal,
+        quantiles=cfg.backtest.quantiles,
+        path=figures_dir / "car_by_quantile.png",
+    )
+    if not result.coefficients.empty:
+        figures["Coefficient stability across refits"] = plot_coefficient_stability(
+            result.coefficients, path=figures_dir / "coefficient_stability.png"
+        )
+    if result.backtest is not None:
+        save_stage(
+            result.backtest.daily.reset_index().rename(columns={"index": "date"}),
+            out,
+            "holdout_backtest_daily",
+        )
+        figures["Equity curve across all held-out years"] = plot_equity_curve(
+            result.backtest.daily, path=figures_dir / "equity_curve.png"
+        )
+
+    sections = {}
+    if args.provider == "synthetic":
+        sections["⚠️ This is synthetic data"] = (
+            "The market here is generated, with a known data-generating process. These "
+            "numbers demonstrate that the holdout machinery recovers an effect that was "
+            "deliberately planted and does not invent one that was not — they are not a "
+            "claim about real equities.\n\n"
+            "`eee holdout --drift 0` runs the same procedure with no effect planted. "
+            "Every number below should collapse toward zero in that run."
+        )
+    sections["Per-year results"] = result.summary_markdown()
+    sections["Aggregate"] = format_stats(result.aggregate)
+    if result.backtest is not None:
+        sections["Backtest across all held-out years (net of costs)"] = format_stats(
+            result.backtest.stats
+        )
+        sections["Cost sensitivity"] = result.backtest.cost_sensitivity.round(4).to_markdown(
+            index=False
+        )
+
+    metadata = {
+        "label": label,
+        "holdout_years": years,
+        "target": result.target,
+        "model": cfg.model.kind,
+        "baseline_feature": result.baseline_feature,
+        "embargo_days": cfg.model.embargo_days,
+        "entry_offset": cfg.backtest.entry_offset,
+        "holding_days": cfg.backtest.holding_days,
+        **dataset.meta,
+    }
+    (out / "holdout_summary.json").write_text(
+        _json.dumps({"metadata": metadata, "aggregate": result.aggregate}, indent=2, default=str)
+    )
+    report = write_report(
+        out,
+        title=f"Rolling annual holdouts — {label}",
+        sections=sections,
+        figures=figures,
+        metadata=metadata,
+    )
+    dashboard = write_dashboard(out / "dashboard.html", result, metadata)
+
+    print(result.summary_markdown())
+    print()
+    print(f"report    -> {report}")
+    print(f"dashboard -> {dashboard}")
+    return 0
 
 
 def _run_with_provider(args, cfg) -> int:

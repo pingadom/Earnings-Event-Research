@@ -183,3 +183,123 @@ def plot_cost_sensitivity(sens: pd.DataFrame, path: str | Path | None = None,
                     fontsize=8, color=MUTED)
     _style(ax, title, "Cost multiple vs the baseline assumption", "Net Sharpe ratio")
     return _save(fig, path) or (fig, ax)
+
+
+# --- holdout figures --------------------------------------------------------
+
+
+def plot_holdout_ic(by_year: pd.DataFrame, path: str | Path | None = None,
+                    title: str = "Out-of-sample rank IC by held-out year"):
+    """One bar per held-out year, with the single-feature baseline behind it."""
+    fig, ax = plt.subplots(figsize=(7.5, 4))
+    years = by_year["year"].to_numpy()
+    ic = by_year["ic_mean"].to_numpy()
+    ax.axhline(0, color=MUTED, linewidth=1)
+    if "baseline_ic" in by_year.columns:
+        ax.bar(years, by_year["baseline_ic"], width=0.62, color=GRID,
+               edgecolor=MUTED, linewidth=0.6, label="Earnings surprise alone", zorder=1)
+    ax.bar(years, ic, width=0.38, color=np.where(ic >= 0, ACCENT, NEGATIVE),
+           label="Model", zorder=2)
+    for x, y, t in zip(years, ic, by_year["ic_tstat"], strict=False):
+        if np.isfinite(t):
+            ax.annotate(f"t={t:.1f}", (x, y), textcoords="offset points",
+                        xytext=(0, 5 if y >= 0 else -13), ha="center",
+                        fontsize=8, color=MUTED)
+    _style(ax, title, "", "Spearman rank IC")
+    ax.set_xticks(years)
+    leg = ax.legend(frameon=False, fontsize=9, loc="upper right")
+    for t in leg.get_texts():
+        t.set_color(INK)
+    return _save(fig, path) or (fig, ax)
+
+
+def plot_predicted_vs_realised(by_year: pd.DataFrame, path: str | Path | None = None,
+                               title: str = "Predicted vs realised quintile spread, by year"):
+    """The comparison the whole exercise is for: what the model said, then what happened."""
+    fig, ax = plt.subplots(figsize=(7.5, 4.2))
+    years = by_year["year"].to_numpy()
+    width = 0.36
+    ax.axhline(0, color=MUTED, linewidth=1)
+    ax.bar(years - width / 2, by_year["predicted_spread"] * 1e4, width,
+           color=COOL, label="Predicted", zorder=2)
+    ax.bar(years + width / 2, by_year["realised_spread"] * 1e4, width,
+           color=WARM, label="Realised", zorder=2)
+    _style(ax, title, "", "Top-minus-bottom quintile (bp)")
+    ax.set_xticks(years)
+    leg = ax.legend(frameon=False, fontsize=9, loc="upper right")
+    for t in leg.get_texts():
+        t.set_color(INK)
+    return _save(fig, path) or (fig, ax)
+
+
+def plot_calibration(predictions: pd.DataFrame, target: str,
+                     path: str | Path | None = None, bins: int = 20,
+                     title: str = "Calibration: predicted vs realised abnormal return"):
+    """Binned predictions against realised outcomes, with the 45-degree line.
+
+    A signal can rank correctly and still be badly calibrated. The gap between
+    the fitted line and the diagonal is exactly the overconfidence you would
+    otherwise size positions on.
+    """
+    df = predictions[["prediction", target]].dropna()
+    if len(df) < bins * 5:
+        raise ValueError("not enough predictions to calibrate")
+    df = df.assign(bucket=pd.qcut(df["prediction"].rank(method="first"), bins, labels=False))
+    grouped = df.groupby("bucket")
+    x = grouped["prediction"].mean() * 1e4
+    y = grouped[target].mean() * 1e4
+    se = (grouped[target].std() / np.sqrt(grouped[target].count())) * 1e4
+
+    fig, ax = plt.subplots(figsize=(6.4, 5.4))
+    lim = float(max(abs(x).max(), abs(y).max()) * 1.15)
+    ax.axhline(0, color=GRID, linewidth=1)
+    ax.axvline(0, color=GRID, linewidth=1)
+    ax.plot([-lim, lim], [-lim, lim], color=MUTED, linewidth=1,
+            linestyle="--", label="Perfect calibration")
+    ax.errorbar(x, y, yerr=1.96 * se, fmt="o", color=ACCENT, markersize=5,
+                markerfacecolor="white", markeredgewidth=1.6,
+                ecolor=ACCENT, elinewidth=1, capsize=0, alpha=0.9,
+                label=f"{bins} prediction bins")
+    fit = np.polyfit(x, y, 1)
+    ax.plot([-lim, lim], np.polyval(fit, [-lim, lim]), color=WARM, linewidth=1.8,
+            label=f"Fitted (slope {fit[0]:.2f})")
+    ax.set_xlim(-lim, lim)
+    ax.set_ylim(-lim, lim)
+    _style(ax, title, "Predicted abnormal return (bp)", "Realised abnormal return (bp)")
+    leg = ax.legend(frameon=False, fontsize=9, loc="upper left")
+    for t in leg.get_texts():
+        t.set_color(INK)
+    return _save(fig, path) or (fig, ax)
+
+
+def plot_coefficient_stability(coefficients: pd.DataFrame, top_n: int = 12,
+                               path: str | Path | None = None,
+                               title: str = "Model coefficients across refits"):
+    """Does the model keep saying the same thing as it is refitted each year?
+
+    Coefficients that flip sign between refits mean the model is chasing noise,
+    even when the headline out-of-sample numbers look acceptable.
+    """
+    if coefficients.empty:
+        raise ValueError("no coefficients (the estimator is not linear)")
+    order = coefficients.abs().mean(axis=1).sort_values(ascending=False).head(top_n).index
+    sub = coefficients.loc[order]
+
+    fig, ax = plt.subplots(figsize=(7.5, 0.34 * len(order) + 1.6))
+    ax.axvline(0, color=MUTED, linewidth=1)
+    ypos = np.arange(len(order))[::-1]
+    for j, year in enumerate(sub.columns):
+        shade = 0.35 + 0.65 * (j + 1) / len(sub.columns)
+        ax.scatter(sub[year], ypos, s=26, color=ACCENT, alpha=shade,
+                   label=str(year) if j in (0, len(sub.columns) - 1) else None,
+                   zorder=3, edgecolors="none")
+    ax.scatter(sub.mean(axis=1), ypos, s=90, marker="|", color=INK, zorder=4)
+    ax.set_yticks(ypos)
+    ax.set_yticklabels(order, fontsize=9)
+    _style(ax, title, "Standardised coefficient", "")
+    leg = ax.legend(frameon=False, fontsize=8, loc="lower right", title="refit year")
+    leg.get_title().set_color(MUTED)
+    leg.get_title().set_fontsize(8)
+    for t in leg.get_texts():
+        t.set_color(INK)
+    return _save(fig, path) or (fig, ax)

@@ -20,6 +20,12 @@ universe → prices/events/fundamentals/filings
          → sector-neutral long/short book → transaction costs → evaluation
 ```
 
+**[→ Results: rolling annual holdouts](docs/results.md)** — train through year
+*Y−1*, freeze the model, predict year *Y*, compare with what happened. Six
+independent held-out years, reported next to an identical run on data with no
+effect planted in it, so you can see what the same pipeline produces when there
+is nothing to find.
+
 ---
 
 ## Quickstart
@@ -30,8 +36,9 @@ cd Earnings-Event-Research
 python -m venv .venv && source .venv/bin/activate      # Windows: .venv\Scripts\activate
 pip install -e ".[dev]"
 
-pytest                     # full suite, offline
-eee demo --out reports/demo
+pytest                                  # full suite, offline
+eee demo    --out reports/demo          # one pass end to end
+eee holdout --out reports/holdout       # six held-out years + dashboard
 ```
 
 `eee demo` runs the entire pipeline end to end on a synthetic market with a
@@ -41,9 +48,15 @@ writes a markdown report, five figures and the intermediate CSVs to
 command gives the same numbers on any machine.
 
 ```
-eee demo               →  out-of-sample IC 0.19,  net Sharpe  5.3
-eee demo --drift 0     →  out-of-sample IC 0.02,  net Sharpe  0.2
+eee demo                  →  out-of-sample IC 0.19,  net Sharpe  5.3
+eee demo    --drift 0     →  out-of-sample IC 0.02,  net Sharpe  0.2
+
+eee holdout               →  6/6 years positive, mean IC 0.197, net Sharpe 4.82
+eee holdout --drift 0     →  4/6 years positive, mean IC 0.022, net Sharpe 0.37
 ```
+
+`eee holdout` also writes a self-contained interactive `dashboard.html` —
+per-year results, calibration, equity curve, dark mode, no dependencies.
 
 > The demo's headline numbers are **not a research finding**. They are a
 > statement that the machinery recovers an effect that was deliberately planted
@@ -60,8 +73,8 @@ To use real data:
 
 ```bash
 cp .env.example .env         # add your SEC_USER_AGENT
-eee ingest --provider yahoo --tickers AAPL,MSFT,JPM --start 2015-01-01 --end 2024-12-31
-eee event-study --provider yahoo --tickers AAPL,MSFT,JPM --out reports/study
+python scripts/download_data.py --tickers AAPL MSFT JPM --start 2015-01-01
+eee event-study --provider local --tickers AAPL,MSFT,JPM --start 2015-01-01 --end 2026-08-18 --out reports/study
 ```
 
 ---
@@ -183,8 +196,11 @@ src/earnings_engine/
   models/walkforward.py     purged expanding-window splitter
   backtest/                 sector-neutral book, costs, performance
   reporting/                figures and the run report
-  cli.py                    eee demo | ingest | event-study | research | vendor-check
-tests/                      108 tests, offline, including leak regressions
+  holdout.py                rolling annual holdouts: train Y-1, freeze, predict Y
+  reporting/dashboard.py    self-contained interactive HTML, no dependencies
+  cli.py                    eee demo | holdout | ingest | event-study | research
+tests/                      125 tests, offline, including leak regressions
+docs/results.md             the holdout evidence, with its null control
 docs/                       methodology, biases, data sources, decision records
 ```
 
@@ -203,6 +219,8 @@ that grid makes it obvious. `eee research` additionally reports:
 
 - out-of-sample information coefficient per cohort, with a Newey–West t-stat —
   a high average IC driven by three good quarters is not a strategy;
+- **calibration** — predicted magnitudes against realised ones. A signal can rank
+  correctly and still be badly scaled, and position sizing depends on which;
 - gross **and** net equity curves;
 - a cost-sensitivity curve answering "how wrong would my cost assumption have to
   be for this edge to disappear?", which converts an unverifiable assumption
@@ -225,6 +243,113 @@ first place to look is the four failure modes in the table above.
 - Loughran & McDonald (2011), *When Is a Liability Not a Liability?*
 - Cohen, Malloy & Nguyen (2020), *Lazy Prices*
 - López de Prado (2018), *Advances in Financial Machine Learning*, ch. 7
+
+---
+
+## Real Data Acquisition
+
+The production downloader writes consolidated, validated Parquet files under
+`data/raw/` and durable per-symbol work under `data/cache/`. A stopped run can
+be restarted without discarding completed symbols. The research provider named
+`local` reads only these files: it never contacts the network and never falls
+back to synthetic data.
+
+### Windows PowerShell setup
+
+From a fresh clone:
+
+```powershell
+git clone https://github.com/pingadom/Earnings-Event-Research.git
+cd Earnings-Event-Research
+
+py -m venv .venv
+Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass
+.\.venv\Scripts\Activate.ps1
+
+python -m pip install --upgrade pip
+pip install -r requirements.txt
+
+Copy-Item .env.example .env
+notepad .env
+```
+
+Set a real identity in `.env`; SEC fair-access policy requires it:
+
+```text
+SEC_USER_AGENT=Your Name your.email@domain.com
+DATA_START_DATE=2010-01-01
+DATA_END_DATE=
+```
+
+Then acquire the full historical universe and validate every local output:
+
+```powershell
+python scripts/download_data.py
+python scripts/download_data.py --validate-only
+```
+
+Useful resumable subsets:
+
+```powershell
+python scripts/download_data.py --start 2010-01-01 --end 2025-12-31
+python scripts/download_data.py --tickers AAPL MSFT NVDA
+python scripts/download_data.py --prices-only
+python scripts/download_data.py --sec-only
+python scripts/download_data.py --earnings-only
+python scripts/download_data.py --force-refresh
+```
+
+The smallest end-to-end real-data smoke test is:
+
+```powershell
+python scripts/download_data.py --tickers AAPL MSFT NVDA JPM XOM --start 2020-01-01
+```
+
+Run the existing analysis fully offline after acquisition:
+
+```powershell
+eee event-study --provider local --tickers AAPL,MSFT,NVDA,JPM,XOM --start 2020-01-01 --end 2026-08-18 --out reports/real-smoke
+```
+
+### Outputs
+
+- `prices.parquet`: equity OHLCV, raw close, adjusted close, and row-level source.
+- `earnings.parquet`: Yahoo fields reconciled to exact SEC Item 2.02 acceptance timestamps where possible.
+- `fundamentals.parquet`: standardized wide SEC facts with filing time, accession, and concept provenance.
+- `sec_filings.parquet`: submission metadata and traceable EDGAR document URLs.
+- `fama_french_daily.parquet`: FF3, RMW, CMA, momentum, and RF in decimal units.
+- `benchmarks.parquet`: `SPY` and `^GSPC` stored separately from securities.
+- `index_membership.parquet`: interval membership, including deleted and renamed historical symbols when the source has them.
+- `acquisition_manifest.json` and `validation_report.json`: parameters, failures, coverage, and validation findings.
+
+### Methodological safeguards
+
+Fundamentals are joined in publication time, never on `period_end`. Raw SEC
+amendments remain accession-level observations; the canonical research adapter
+uses the earliest public filing for a period/item. An annual additive flow is
+converted to Q4 only by the exact `FY - Q1 - Q2 - Q3` residual and only when all
+three standalone quarters exist; missing components remain missing, and annual
+EPS is never quarterised. Earnings with an exact time are mapped to the legal
+next tradable open by the existing calendar logic.
+Date-only events remain labelled unknown and use a conservative next-session
+policy. Returns use Yahoo `Adj Close`; raw `Close` remains available for audit,
+and no missing price is forward-filled.
+
+The default ticker universe is every historical S&P 500 interval overlapping
+the requested window, rather than today's members. This reduces survivorship
+bias but does not eliminate it: the free membership reconstruction starts in
+1996, Yahoo often lacks delisted histories, and current-sector metadata is not
+a historical GICS series. Every unavailable ticker is recorded rather than
+replaced with synthetic data. Stooq is used only as a logged, row-labelled
+whole-symbol fallback and can be disabled with `--no-stooq-fallback`.
+
+Free sources do not reliably provide complete historical revenue consensus,
+precise Yahoo release times, all delisted-company prices, or licensed
+point-in-time sector classifications. Filing bodies are not bulk-downloaded by
+default because multi-decade 10-K/10-Q text is very large; offline real-data
+runs therefore skip text features explicitly unless local filing text has been
+provided. See [DATA_SOURCES.md](DATA_SOURCES.md) for endpoint-level coverage and
+limitations.
 
 ## Licence
 

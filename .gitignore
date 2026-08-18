@@ -3,6 +3,7 @@
 # directory has been excluded, so `data/vendor/**` would make the negations
 # below silently useless.
 data/raw/*
+data/cache/*
 data/interim/*
 data/processed/*
 data/vendor/*/*
