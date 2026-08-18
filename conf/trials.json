@@ -1,0 +1,74 @@
+{
+  "_readme": [
+    "Every specification actually evaluated on this project, in order.",
+    "",
+    "This file is the honest N behind the deflated Sharpe ratio. Under-report it and",
+    "the deflated Sharpe is inflated, which defeats the point of computing it at all.",
+    "Append a row EVERY time you evaluate a specification end to end -- including the",
+    "ones you abandon, especially the ones you abandon. sharpe_annual is the net",
+    "annualised Sharpe of that specification's stitched holdout backtest, or null",
+    "where the run was abandoned before a backtest existed.",
+    "",
+    "All figures below are on synthetic data. Replace them wholesale when the study",
+    "is re-run on real data; a trial count from one dataset does not transfer."
+  ],
+  "n_trials": 8,
+  "trials": [
+    {
+      "name": "car_market_model_0_19 target, entry at t0",
+      "sharpe_annual": 5.35,
+      "notes": "ABANDONED. Booked the announcement gap, which is untradable. Produced a Sharpe above 2 on the null fixture, which is how the bug was found. See ADR 0003.",
+      "params": {"target": "car_market_model_0_19", "entry_offset": 0, "model": "ridge"},
+      "recorded_at": "2026-08-18T12:16:00+00:00"
+    },
+    {
+      "name": "car_market_model_1_20 target, entry at t0+1, weight cap clipped",
+      "sharpe_annual": null,
+      "notes": "ABANDONED. Clipping weights after sector demeaning left up to 8% net sector exposure, so the book was not actually neutral.",
+      "params": {"target": "car_market_model_1_20", "entry_offset": 1, "cap": "clip"},
+      "recorded_at": "2026-08-18T13:55:00+00:00"
+    },
+    {
+      "name": "car_market_model_1_20, ridge, sector-neutral, rank_gauss, cap scaled",
+      "sharpe_annual": 4.82,
+      "notes": "CURRENT SPECIFICATION. Stitched across holdout years 2019-2024.",
+      "params": {"target": "car_market_model_1_20", "entry_offset": 1, "model": "ridge", "cap": "scale", "transform": "rank_gauss", "quantiles": 5},
+      "recorded_at": "2026-08-18T14:10:00+00:00"
+    },
+    {
+      "name": "single-feature baseline: time-series SUE alone",
+      "sharpe_annual": null,
+      "notes": "Scored every holdout year as the comparison benchmark. Mean IC 0.018.",
+      "params": {"features": ["sue_timeseries"]},
+      "recorded_at": "2026-08-18T14:10:00+00:00"
+    },
+    {
+      "name": "abnormal return estimator: market_adjusted",
+      "sharpe_annual": null,
+      "notes": "Computed and reported in the significance grid; not used as the model target.",
+      "params": {"estimator": "market_adjusted"},
+      "recorded_at": "2026-08-18T12:16:00+00:00"
+    },
+    {
+      "name": "abnormal return estimator: sector_neutral",
+      "sharpe_annual": null,
+      "notes": "Computed and reported; used for backtest P&L.",
+      "params": {"estimator": "sector_neutral"},
+      "recorded_at": "2026-08-18T12:16:00+00:00"
+    },
+    {
+      "name": "event window [0,4] (5-day)",
+      "sharpe_annual": null,
+      "notes": "Reported in the significance grid across all three estimators.",
+      "params": {"window": [0, 4]},
+      "recorded_at": "2026-08-18T12:16:00+00:00"
+    },
+    {
+      "name": "event window [1,5] (5-day tradable drift)",
+      "sharpe_annual": null,
+      "notes": "Reported; the shorter tradable alternative to [1,20].",
+      "params": {"window": [1, 5]},
+      "recorded_at": "2026-08-18T14:10:00+00:00"
+    }
+  ]
+}
