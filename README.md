@@ -37,13 +37,24 @@ eee demo --out reports/demo
 `eee demo` runs the entire pipeline end to end on a synthetic market with a
 known data-generating process, with no network access and no data vendor. It
 writes a markdown report, five figures and the intermediate CSVs to
-`reports/demo/`. It takes about twenty seconds.
+`reports/demo/`. It takes about twenty seconds, and is deterministic — the same
+command gives the same numbers on any machine.
+
+```
+eee demo               →  out-of-sample IC 0.19,  net Sharpe  5.3
+eee demo --drift 0     →  out-of-sample IC 0.02,  net Sharpe  0.2
+```
 
 > The demo's headline numbers are **not a research finding**. They are a
 > statement that the machinery recovers an effect that was deliberately planted
 > in the data. `eee demo --drift 0` plants no effect, and the reported Sharpe
 > should collapse to approximately zero. Both cases are asserted in the test
 > suite. That pair of tests is the point of the synthetic provider.
+>
+> Keep `--n-tickers` at 100 or above. Below that the daily book holds only a
+> handful of names and the reported Sharpe is dominated by small-sample noise
+> in both directions — which is itself a fair illustration of why thin
+> cross-sections cannot support this kind of claim.
 
 To use real data:
 
@@ -173,7 +184,7 @@ src/earnings_engine/
   backtest/                 sector-neutral book, costs, performance
   reporting/                figures and the run report
   cli.py                    eee demo | ingest | event-study | research | vendor-check
-tests/                      99 tests, offline, including leak regressions
+tests/                      108 tests, offline, including leak regressions
 docs/                       methodology, biases, data sources, decision records
 ```
 

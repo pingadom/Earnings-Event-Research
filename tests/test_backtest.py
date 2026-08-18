@@ -65,6 +65,26 @@ def test_book_is_sector_neutral_each_day(scored, study):
     assert net_by_sector.max() < 1e-9
 
 
+def test_per_name_cap_is_hard(scored, study):
+    """Capping must not be followed by a rescale back to the gross target --
+    that would defeat the cap and produce a wildly concentrated book on thin
+    days."""
+    book = build_positions(scored, min_lookback_events=50)
+    daily = build_daily_book(
+        book,
+        study.daily,
+        ar_column="ar_market_model",
+        entry_offset=1,
+        holding_days=20,
+        sector_neutral=True,
+        gross_exposure=1.0,
+        max_weight=0.01,
+    )
+    assert daily["weight"].abs().max() <= 0.01 + 1e-12
+    gross = daily.groupby("date")["weight"].apply(lambda s: s.abs().sum())
+    assert gross.max() <= 1.0 + 1e-9
+
+
 def test_gross_exposure_is_respected(scored, study):
     book = build_positions(scored, min_lookback_events=50)
     daily = build_daily_book(

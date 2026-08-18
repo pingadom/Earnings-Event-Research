@@ -93,15 +93,35 @@ def build_daily_book(
             log.warning("no sector labels available; running a non-neutral book")
         merged["raw_weight"] = merged["side"] - merged.groupby("date")["side"].transform("mean")
 
-    gross = merged.groupby("date")["raw_weight"].transform(lambda s: s.abs().sum())
-    merged["weight"] = merged["raw_weight"] / gross.where(gross > 0) * gross_exposure
-    capped = merged["weight"].clip(-max_weight, max_weight)
-    n_capped = int((capped != merged["weight"]).sum())
-    if n_capped:
-        merged["weight"] = capped
-        gross2 = merged.groupby("date")["weight"].transform(lambda s: s.abs().sum())
-        merged["weight"] = merged["weight"] / gross2.where(gross2 > 0) * gross_exposure
-        log.info("weight cap at +/-%.3f bound %d position-days", max_weight, n_capped)
+    # Scale, do not clip. Clipping after neutralisation breaks neutrality:
+    # capping the largest weights leaves a residual net exposure in whichever
+    # sector had the outliers. Instead pick, per day, the largest scale factor
+    # that satisfies *both* constraints at once --
+    #
+    #     s = min( gross_target / sum|raw| ,  max_weight / max|raw| )
+    #
+    # -- which preserves sector neutrality exactly (a scalar multiple of a
+    # zero-mean vector is still zero-mean), keeps every name inside the cap, and
+    # simply runs a smaller book on thin days. That is also what you would do:
+    # four live names is not an occasion to run 25% positions.
+    by_date = merged.groupby("date")["raw_weight"]
+    gross_raw = by_date.transform(lambda s: s.abs().sum())
+    max_raw = by_date.transform(lambda s: s.abs().max())
+    scale = np.minimum(
+        gross_exposure / gross_raw.where(gross_raw > 0),
+        max_weight / max_raw.where(max_raw > 0),
+    )
+    merged["weight"] = merged["raw_weight"] * scale
+
+    n_bound = int((gross_exposure / gross_raw.where(gross_raw > 0) > scale).sum())
+    if n_bound:
+        log.info(
+            "per-name cap at +/-%.3f was the binding constraint on %d position-days; "
+            "gross exposure there is below the %.2f target",
+            max_weight,
+            n_bound,
+            gross_exposure,
+        )
 
     merged["contrib"] = merged["weight"] * merged[ar_column]
     return merged.dropna(subset=["weight"])

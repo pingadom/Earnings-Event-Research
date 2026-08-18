@@ -45,7 +45,13 @@ def build_parser() -> argparse.ArgumentParser:
 
     demo = sub.add_parser("demo", help="end-to-end run on synthetic data (no network needed)")
     _add_common(demo)
-    demo.add_argument("--n-tickers", type=int, default=120)
+    demo.add_argument(
+        "--n-tickers",
+        type=int,
+        default=150,
+        help="cross-section size; below ~100 the book is too thin for the "
+             "reported statistics to mean much",
+    )
     demo.add_argument("--drift", type=float, default=None,
                       help="planted post-announcement drift per unit of surprise; "
                            "pass 0 to run the null-hypothesis check")
