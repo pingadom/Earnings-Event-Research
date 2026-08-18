@@ -42,7 +42,10 @@ jobs:
       - name: Assemble the site
         run: |
           mkdir -p site/null
-          cp reports/holdout/dashboard.html      site/index.html
+          # The explainer is the landing page: most visitors want to know what
+          # the project found before they want the diagnostics.
+          cp reports/holdout/explainer.html      site/index.html
+          cp reports/holdout/dashboard.html      site/dashboard.html
           cp reports/holdout_null/dashboard.html site/null/index.html
           cp reports/holdout/report.md           site/report.md
           cp -r reports/holdout/figures          site/figures

@@ -81,6 +81,7 @@ ignore = [
 # The dashboard is one big HTML/CSS/JS template string; wrapping it at 100
 # columns would mangle the markup for no benefit.
 "src/earnings_engine/reporting/dashboard.py" = ["E501"]
+"src/earnings_engine/reporting/explainer.py" = ["E501"]
 # Prose templates: the research note is mostly long English strings, and
 # wrapping them at 100 columns fragments sentences for no benefit.
 "scripts/make_research_note.py" = ["E501"]

@@ -203,6 +203,7 @@ def _holdout(args, cfg) -> int:
     from .holdout import run_annual_holdouts
     from .pipeline import build_dataset, build_feature_panel, run_event_study, save_stage
     from .reporting.dashboard import write_dashboard
+    from .reporting.explainer import build_explainer
     from .reporting.plots import (
         plot_calibration,
         plot_car_by_quantile,
@@ -377,11 +378,18 @@ def _holdout(args, cfg) -> int:
         out / "dashboard.html", result, metadata, diagnostics,
         sens if (diagnostics is not None and trials.n) else None,
     )
+    # The dashboard is for someone who already knows what an information
+    # coefficient is; the explainer is for everyone else, and both are built
+    # from the same artefacts so they cannot disagree.
+    explainer = build_explainer(
+        out / "holdout_summary.json", out / "holdout_by_year.csv", out / "explainer.html"
+    )
 
     print(result.summary_markdown())
     print()
     print(f"report    -> {report}")
     print(f"dashboard -> {dashboard}")
+    print(f"explainer -> {explainer}")
     return 0
 
 
