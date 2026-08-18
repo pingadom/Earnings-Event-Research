@@ -120,3 +120,44 @@ def test_daytime_acceptance_before_the_filing_date_is_still_an_error():
     )
     report = validate_frames({"fundamentals": fundamentals})
     assert any(i.code == "availability_before_filing" for i in report.errors)
+
+
+def test_csv_fallback_preserves_datetime_dtypes(tmp_path):
+    """The gzipped-CSV fallback must be dtype-equivalent to parquet.
+
+    Regression: without this, dates came back as strings and a downstream
+    concat of "2015-01-02" with "2015-01-02 00:00:00" aborted the whole
+    acquisition run with an unparseable-format error.
+    """
+    from earnings_engine.data.storage import read_table, write_parquet_atomic
+
+    frame = pd.DataFrame(
+        {
+            "ticker": ["A", "B"],
+            "date": [pd.Timestamp("2015-01-02"), pd.Timestamp("2016-03-04")],
+            "period_end": [pd.Timestamp("2014-12-31"), pd.Timestamp("2016-03-31")],
+            "filed_at_utc": [
+                pd.Timestamp("2019-10-30 22:12", tz="UTC"),
+                pd.Timestamp("2020-01-28 23:02", tz="UTC"),
+            ],
+            "close": [1.0, 2.0],
+        }
+    )
+    back = read_table(write_parquet_atomic(frame, tmp_path / "x.parquet"))
+    assert str(back["date"].dtype).startswith("datetime64")
+    assert str(back["period_end"].dtype).startswith("datetime64")
+    assert back["filed_at_utc"].dt.tz is not None
+    pd.testing.assert_series_equal(back["close"], frame["close"])
+
+
+def test_csv_fallback_handles_mixed_date_precision(tmp_path):
+    """A CSV can hold a bare date and a full timestamp in one column."""
+    from earnings_engine.data.storage import read_table
+
+    path = tmp_path / "mixed.csv.gz"
+    pd.DataFrame({"date": ["2015-01-02", "2015-01-05 00:00:00"]}).to_csv(
+        path, index=False, compression="gzip"
+    )
+    back = read_table(path)
+    assert str(back["date"].dtype).startswith("datetime64")
+    assert back["date"].notna().all()

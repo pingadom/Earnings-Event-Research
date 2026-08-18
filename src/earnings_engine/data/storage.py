@@ -41,12 +41,38 @@ def table_path(path: str | Path) -> Path:
     return p
 
 
+#: Columns that must come back as datetimes. Parquet carries dtypes; CSV does
+#: not, and a date column silently returned as text is the kind of difference
+#: that surfaces a thousand lines later as an unparseable format string.
+_NAIVE_DATE_COLUMNS = frozenset(
+    {"date", "period_end", "filing_date", "earnings_date", "start_date", "end_date"}
+)
+
+
+def _restore_dtypes(frame: pd.DataFrame) -> pd.DataFrame:
+    """Re-apply the datetime dtypes that a CSV round-trip drops.
+
+    Without this the fallback is not equivalent to parquet, which is the whole
+    promise of having one. Anything ending ``_utc`` comes back timezone-aware;
+    the rest come back naive. ``format="mixed"`` because a CSV can hold
+    "2015-01-02" and "2015-01-02 00:00:00" in the same column, and pandas locks
+    onto the first row's format otherwise.
+    """
+    for column in frame.columns:
+        name = str(column)
+        if name.endswith("_utc"):
+            frame[column] = pd.to_datetime(frame[column], errors="coerce", utc=True, format="mixed")
+        elif name in _NAIVE_DATE_COLUMNS or name.endswith("_date"):
+            frame[column] = pd.to_datetime(frame[column], errors="coerce", format="mixed")
+    return frame
+
+
 def read_table(path: str | Path) -> pd.DataFrame:
     """Read a dataset written by :func:`write_parquet_atomic`."""
     p = table_path(path)
     if p.suffix == ".parquet":
         return pd.read_parquet(p)
-    return pd.read_csv(p, low_memory=False)
+    return _restore_dtypes(pd.read_csv(p, low_memory=False))
 
 
 def safe_symbol(value: str) -> str:
