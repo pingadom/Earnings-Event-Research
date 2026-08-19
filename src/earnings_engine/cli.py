@@ -391,7 +391,10 @@ def _holdout(args, cfg) -> int:
     # coefficient is; the explainer is for everyone else, and both are built
     # from the same artefacts so they cannot disagree.
     explainer = build_explainer(
-        out / "holdout_summary.json", out / "holdout_by_year.csv", out / "explainer.html"
+        out / "holdout_summary.json",
+        out / "holdout_by_year.csv",
+        out / "explainer.html",
+        text_enabled=cfg.features.text,
     )
 
     print(result.summary_markdown())

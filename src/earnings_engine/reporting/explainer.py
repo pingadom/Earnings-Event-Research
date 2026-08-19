@@ -49,6 +49,27 @@ AXIS = "var(--ink)"
 MUTED = "var(--muted)"
 
 
+_TEXT_STEP = """<li><strong>Read the language</strong>
+<span>The earnings press release itself is downloaded and scored for tone, uncertainty and how
+much it has been rewritten since last quarter. Companies edit their boilerplate when something
+has changed.</span></li>"""
+
+#: The same step, when the corpus was not available for the run being described.
+#: Describing analysis that did not happen is the easiest way for a summary page
+#: to become fiction, so the page says which half of the question was tested.
+_TEXT_STEP_OFF = """<li><strong>Read the language &mdash; not in this run</strong>
+<span>The press release behind every announcement is downloaded and can be scored for tone,
+uncertainty and how much it has been rewritten since last quarter. The corpus was still being
+assembled when these results were produced, so this half of the question is untested here. It is
+switched off explicitly rather than left to quietly fill in blanks.</span></li>"""
+
+_TEXT_CAVEAT = """<p><strong>Half the question is untested.</strong> The original hypothesis was
+about the numbers <em>and</em> the language. These results cover the numbers only, because the
+release corpus was incomplete when the study was run. Whether management's choice of words adds
+anything the accounts do not is still open.</p>
+"""
+
+
 def _e(value: object) -> str:
     return html.escape(str(value), quote=True)
 
@@ -371,6 +392,7 @@ def build_explainer(
     out_path: str | Path,
     *,
     dashboard_href: str = "dashboard.html",
+    text_enabled: bool = True,
     repo_url: str = "https://github.com/pingadom/Earnings-Event-Research",
 ) -> Path:
     """Render the explainer page from a completed holdout run."""
@@ -503,6 +525,8 @@ def build_explainer(
         "returns_chart": returns_chart,
         "returns_table": returns_table,
         "verdict_rows": verdict_rows,
+        "text_step": _TEXT_STEP if text_enabled else _TEXT_STEP_OFF,
+        "text_caveat": "" if text_enabled else _TEXT_CAVEAT,
         "dashboard_href": _e(dashboard_href),
         "repo_url": _e(repo_url),
     }
@@ -692,10 +716,7 @@ bell or after the close.</span></li>
 own regulatory filings, and converted into <em>changes</em> — this quarter against the same
 quarter a year ago. A 32% profit margin means nothing on its own; a margin three points above
 last year's means something.</span></li>
-<li><strong>Read the language</strong>
-<span>The earnings press release itself is downloaded and scored for tone, uncertainty and how
-much it has been rewritten since last quarter. Companies edit their boilerplate when something
-has changed.</span></li>
+{{text_step}}
 <li><strong>Measure what happened next</strong>
 <span>For each announcement, the share's abnormal return over the following 1, 5 and 20 trading
 days — starting from the <em>next</em> day's open, because the overnight jump was never
@@ -819,7 +840,7 @@ this matters, and it would most likely make the results worse, not better, since
 companies are where bad earnings news leads somewhere.</p>
 <p><strong>Sample size.</strong> {{n_predictions}} predictions across {{n_years}} years is
 enough to detect a strong signal, not a weak one. A weak signal may be here and undetected.</p>
-<p><strong>Costs are modelled, not measured.</strong> The spread, commission and market impact
+{{text_caveat}}<p><strong>Costs are modelled, not measured.</strong> The spread, commission and market impact
 are estimated. Real execution could be better or worse.</p>
 
 <h2>Look at the detail</h2>

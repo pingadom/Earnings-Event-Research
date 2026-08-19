@@ -114,3 +114,18 @@ def test_charts_draw_one_mark_per_year(page):
 def test_colour_is_never_the_only_encoding(page):
     """The line chart's legend names each series next to its swatch."""
     assert ">Predicted<" in page and ">Actually realised<" in page
+
+
+def test_the_page_does_not_describe_analysis_that_did_not_run(tmp_path):
+    """Text features off must change the page, not just a footnote somewhere."""
+    (tmp_path / "s.json").write_text(json.dumps(SUMMARY), encoding="utf-8")
+    BY_YEAR.to_csv(tmp_path / "y.csv", index=False)
+    off = build_explainer(
+        tmp_path / "s.json", tmp_path / "y.csv", tmp_path / "off.html", text_enabled=False
+    ).read_text()
+    on = build_explainer(
+        tmp_path / "s.json", tmp_path / "y.csv", tmp_path / "on.html", text_enabled=True
+    ).read_text()
+    assert "not in this run" in off and "not in this run" not in on
+    assert "Half the question is untested" in off
+    assert "Half the question is untested" not in on
