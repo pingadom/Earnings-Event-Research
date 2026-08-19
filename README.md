@@ -34,32 +34,46 @@ If you want to know what this found without reading a methods section, start
 with the explainer. It is generated from the same run artefacts as everything
 else, so it cannot disagree with them.
 
-**The headline is a null.** 114 S&P 500 companies, **3,323 real earnings
-announcements** timestamped from SEC filings, held out one year at a time
-2019–2024:
+**The headline is a null — and the trading numbers are provably uninformative.**
+466 S&P 500 companies, **13,736 real earnings announcements** timestamped from
+SEC filings, held out one year at a time 2019–2024:
 
 | | |
 |---|---:|
-| Mean out-of-sample IC | 0.024 (t = 1.17) |
+| Mean out-of-sample IC | 0.022 (t = 1.30) |
 | Years with positive IC | 4 / 6 |
-| Net Sharpe after costs | −0.61 (t = −1.16) |
-| Alpha vs FF5 + momentum | −0.81% (t = −1.36) |
-| **IC trend per year** | **−0.023 (p = 0.033)** |
+| Net Sharpe after costs | −0.79 (t = −1.98) |
+| **Sharpe vs shuffled-prediction null** | **47th percentile, p = 0.53** |
+| Alpha vs FF5 + momentum | −1.67% (t = −2.16) |
+| Deflated Sharpe (8 trials) | 0.03 |
 
-The hypothesis is **not supported on this sample**. The substantive finding is
-the decay: positive 2019–2022, negative 2023–2024, significant at 5%. That is
-what the literature predicts for an anomaly documented since 1968 and widely
-traded since the mid-2000s.
+The hypothesis is **not supported on this sample**. None of the five
+falsification criteria written down *before* the run is met.
 
-Three of the five falsification criteria written down *before* the run are met.
-The factor regression finds no alpha but does find unintended value and
-investment tilts. Fama–MacBeth agrees with the portfolio sort. And
-[§R5](docs/results.md#r5-the-limitation-that-matters-most) quantifies the bias
-that survived: Yahoo serves no price history for **61% of the index-deleted
-names** in the sample, against 5% of survivors — including SIVB and FRC.
+The result worth the reader's time is the third row. A long-short book holding
+twenty-day positions into a binding per-name cap drifts slightly negative on a
+worthless signal, so a negative Sharpe is not automatically evidence of
+anything. Running the identical book on the identical events **200 times with
+the predictions shuffled** puts the realised −0.79 at the *47th percentile* of
+pure noise. The trading result carries no information in either direction, and
+that is measured rather than asserted.
+
+**A previous version of this README reported a significant decay trend
+(−0.023/yr, p = 0.033) as its substantive finding. It did not survive
+quadrupling the sample** — on 466 companies the trend is +0.006/yr, p = 0.61.
+The correction is documented in [§R1](docs/results.md#r1-the-result) rather than
+edited out, because a six-point regression dissolving under more data is the
+most transferable lesson here.
+
+What the factor regression *does* find is that the strategy is a quality-and-value
+portfolio in disguise: significant loadings on HML (t = 2.9), RMW (t = 4.1) and
+CMA (t = 3.5), and against momentum (t = −2.9), R² = 0.17.
+[§R5](docs/results.md#r5-the-limitations-that-matter) quantifies the bias that
+survived: Yahoo serves no price history for **61% of the index-deleted names**,
+against 5% of survivors — including SIVB and FRC.
 
 The same pipeline run on synthetic data with a *known* planted effect recovers
-it in 6/6 years at a net Sharpe of 4.8, and returns 0.02 / 0.37 when nothing is
+it in 6/6 years at a net Sharpe of 4.8, and finds nothing when nothing is
 planted. That contrast is why the null above is worth believing.
 
 ---

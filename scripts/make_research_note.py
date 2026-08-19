@@ -25,7 +25,6 @@ from reportlab.platypus import (
     HRFlowable,
     Image,
     KeepTogether,
-    PageBreak,
     Paragraph,
     SimpleDocTemplate,
     Table,
@@ -137,10 +136,12 @@ def load_numbers() -> dict:
     null = json.loads((REPORTS / CONTROL / "holdout_summary.json").read_text())
     by_year = pd.read_csv(REPORTS / primary / "holdout_by_year.csv")
     fm = pd.read_csv(REPORTS / primary / "fama_macbeth.csv")
+    factors_path = REPORTS / primary / "factor_attribution.csv"
+    factors = pd.read_csv(factors_path) if factors_path.exists() else pd.DataFrame()
     synth = json.loads((REPORTS / "holdout" / "holdout_summary.json").read_text())
     return {
         "hold": hold["aggregate"], "meta": hold["metadata"],
-        "null": null["aggregate"], "by_year": by_year, "fm": fm,
+        "null": null["aggregate"], "by_year": by_year, "fm": fm, "factors": factors,
         "synth": synth["aggregate"],
     }
 
@@ -157,10 +158,38 @@ def footer(canvas, doc):
     canvas.restoreState()
 
 
+def _loadings(factors, threshold: float = 2.0) -> str:
+    """Name the factor exposures the regression actually found significant.
+
+    Typing them into the prose is how a note ends up claiming a value tilt of
+    t = 2.54 six months after the number became 2.91.
+    """
+    if factors is None or factors.empty:
+        return "no factor at |t| > 2"
+    names = {
+        "HML": "value (HML)", "SMB": "size (SMB)", "RMW": "profitability (RMW)",
+        "CMA": "conservative investment (CMA)", "MOM": "momentum (MOM)",
+        "Mkt-RF": "the market",
+    }
+    rows = factors[factors["term"] != "alpha (annualised)"]
+    hits = rows[rows["t_stat"].abs() >= threshold].sort_values(
+        "t_stat", key=lambda c: c.abs(), ascending=False
+    )
+    if hits.empty:
+        return "no factor at |t| > 2"
+    parts = [
+        f"{'negative ' if r.estimate < 0 else ''}{names.get(r.term, r.term)[:-1]}, "
+        f"t = {r.t_stat:.2f})"
+        for r in hits.head(4).itertuples()
+    ]
+    return ", ".join(parts[:-1]) + (" and " + parts[-1] if len(parts) > 1 else "")
+
+
 def build(out_path: Path) -> Path:
     st = build_styles()
     n = load_numbers()
     h, nu, by, sy = n["hold"], n["null"], n["by_year"], n["synth"]
+    fa = n["factors"]
     W = A4[0] - 40 * mm
 
     doc = SimpleDocTemplate(
@@ -173,8 +202,8 @@ def build(out_path: Path) -> Path:
 
     S.append(para("Does earnings information predict abnormal returns?", st["title"]))
     S.append(para(
-        "A null result on 3,323 S&P 500 announcements, and the machinery built to make that "
-        "answer trustworthy.", st["subtitle"]))
+        f"A null result on {n['meta'].get('n_events', 0):,} S&amp;P 500 announcements, and the "
+        "machinery built to make that answer trustworthy.", st["subtitle"]))
     S.append(para(
         f"Aaryan H. &nbsp;·&nbsp; {date.today():%B %Y} &nbsp;·&nbsp; "
         f'<a href="{REPO_URL}" color="#0b6bcb">{REPO_URL.replace("https://", "")}</a>',
@@ -186,17 +215,21 @@ def build(out_path: Path) -> Path:
         "Post-earnings-announcement drift is among the most-studied anomalies in finance and "
         "among the easiest to reproduce spuriously. This note tests whether information in "
         f"earnings releases predicts short-horizon abnormal returns across {n['meta'].get('n_events', 0):,} "
-        "announcements by 114 S&amp;P 500 companies, timestamped to the minute from SEC filings, "
+        "announcements by 466 S&amp;P 500 companies, timestamped to the minute from SEC filings, "
         "with each year from 2019 to 2024 held out and predicted by a model frozen before it "
         f"began. <b>It does not.</b> Mean out-of-sample rank IC is {h['mean_ic']:.3f} "
         f"(t = {h['ic_tstat_across_years']:.2f}), the sector-neutral book returns a net Sharpe of "
         f"{h['stitched_sharpe_net']:.2f}, and alpha against Fama–French five factors plus momentum "
         f"is {n['meta'].get('alpha_annual', 0):.2%} (t = {n['meta'].get('alpha_tstat', 0):.2f}). "
-        f"The substantive finding is decay: annual IC falls "
-        f"{abs(h.get('ic_trend_per_year', 0)):.3f} per year "
-        f"(p = {h.get('ic_trend_p', float('nan')):.3f}), positive through 2022 and "
-        "negative after — the pattern predicted for an anomaly documented since 1968 and widely "
-        "traded since the mid-2000s. Run on synthetic data with a known planted effect the same "
+        f"That Sharpe is uninformative rather than adverse: running the same book on the same "
+        f"events {h.get('perm_n_permutations', 0)} times with the predictions shuffled yields "
+        f"{h.get('perm_null_mean', float('nan')):.2f} on average, placing the realised value at "
+        f"the {h.get('perm_percentile', float('nan')):.0f}th percentile of noise "
+        f"(p = {h.get('perm_p_value_one_sided', float('nan')):.2f}). An earlier version of this "
+        "study, on a quarter as many companies, reported a significant decay in skill; on the "
+        f"full sample the trend is {h.get('ic_trend_per_year', 0):+.3f} per year "
+        f"(p = {h.get('ic_trend_p', float('nan')):.2f}) and does not replicate. "
+        "Run on synthetic data with a known planted effect the same "
         f"pipeline recovers it in {sy['positive_ic_years']}/{sy['n_years']} years at a net Sharpe "
         f"of {sy['stitched_sharpe_net']:.2f}; with nothing planted it returns "
         f"{nu['mean_ic']:.3f} and {nu['stitched_sharpe_net']:.2f}. That contrast is why the null "
@@ -216,7 +249,9 @@ def build(out_path: Path) -> Path:
         "before-open or after-close flag. Features are fundamental changes differenced "
         "year-on-year and standardised unexpected earnings, each stamped with the moment it "
         "became public; a single guard refuses any panel where a feature post-dates the trade. "
-        "Filing text was not downloaded, so the textual half of the hypothesis is untested here.",
+        "Filing text is acquired but was not yet complete for the full universe when this run "
+        "was made, so the textual half of the hypothesis is untested here and is switched off "
+        "explicitly rather than left to impute silently.",
         st["body"]))
 
     S.append(para("2 · SIX HELD-OUT YEARS", st["h"]))
@@ -237,15 +272,17 @@ def build(out_path: Path) -> Path:
         "<b>Table 1.</b> Each row is a year the model never saw in training. <i>Pred.</i> and "
         "<i>Real.</i> are the predicted and realised top-minus-bottom quintile spreads in basis "
         "points; <i>Calib.</i> is the slope of realised on predicted, where 1.00 would mean the "
-        "magnitudes were exactly right. The model predicted a 230–300 bp spread every year and "
-        "realised between −152 and +228: confident throughout, and wrong more often than not. "
-        "2020 is the only year clearing t = 2, which is what one year in six looks like under a "
-        "5% threshold.", st["caption"]))
-    S.append(PageBreak())
+        f"magnitudes were exactly right. The model predicted a positive spread of "
+        f"{by.predicted_spread.min() * 1e4:.0f}–{by.predicted_spread.max() * 1e4:.0f} bp every "
+        f"single year and realised between {by.realised_spread.min() * 1e4:.0f} and "
+        f"{by.realised_spread.max() * 1e4:.0f}: confident throughout, and wrong as often as not. "
+        f"{int(by.loc[by.ic_tstat.abs().idxmax(), 'year'])} is the only year clearing t = 2 — one "
+        "year in six, which is what a 5% threshold produces from noise — and it is also one of "
+        "the worst for realised profit. Ranking and sizing are different skills.", st["caption"]))
     S.extend(figure("predicted_vs_realised.png",
                     "<b>Figure 1.</b> Predicted against realised top-minus-bottom quintile "
                     "spread, by held-out year. A model with no signal still has opinions.",
-                    104, st))
+                    90, st))
 
     S.append(para("3 · WHY BELIEVE THE NULL", st["h"]))
     S.append(para(
@@ -257,7 +294,8 @@ def build(out_path: Path) -> Path:
         f"{nu['mean_ic']:.3f} and {nu['stitched_sharpe_net']:.2f} — yet still posts an IC of "
         "0.080 at t = 3.67 in one individual year, a false positive in data where there is "
         "provably nothing to find. Anyone reporting a single year would have reported that one; "
-        "the same caution applies to 2020 in Table 1.", st["body"]))
+        f"the same caution applies to "
+        f"{int(by.loc[by.ic_tstat.abs().idxmax(), 'year'])} in Table 1.", st["body"]))
     def pair(key, fmt="{:.2f}"):
         return fmt.format(h[key]), fmt.format(nu[key])
 
@@ -286,9 +324,10 @@ def build(out_path: Path) -> Path:
         f"Regressed on Fama–French five factors plus momentum with Newey–West errors, the book "
         f"shows an annualised alpha of {n['meta'].get('alpha_annual', 0):.2%} "
         f"(t = {n['meta'].get('alpha_tstat', 0):.2f}) — no alpha. What the regression does find is "
-        "significant loadings on value (HML, t = 2.54) and investment (CMA, t = 2.08): the "
-        "strategy was unintentionally buying cheap, conservatively-investing firms, which are "
-        "compensated factors available for a few basis points. Eight specifications are logged, "
+        f"significant loadings on {_loadings(fa)}: the strategy is a quality-and-value portfolio "
+        "in disguise, and those are compensated factors available for a few basis points. That "
+        "alpha should also be read against the shuffled-prediction null in the abstract rather "
+        "than against zero. Eight specifications are logged, "
         "including the two abandoned, giving a deflated Sharpe ratio of "
         f"{n['meta'].get('deflated_sharpe', float('nan')):.2f}. Fama–MacBeth over 60 monthly "
         "cross-sections finds no feature significant at 5%, agreeing with the portfolio sort — "
@@ -297,15 +336,16 @@ def build(out_path: Path) -> Path:
     S.append(para("5 · THE LIMITATION THAT MATTERS MOST", st["h"]))
     S.append(para(
         "A point-in-time universe is not enough if the price source cannot serve delisted names. "
-        "Of 150 tickers sampled at random from every S&amp;P 500 member over the period, 46 had "
-        "been deleted from the index; Yahoo returned no price history for 28 of those 46 (61%), "
-        "against 5 of 104 survivors (5%). The names lost include SIVB and FRC — Silicon Valley "
+        "Yahoo returns no price history for 61% of the names deleted from the index during the "
+        "sample, against 5% of the survivors, so 466 of the 735 members could be studied at all. "
+        "The names lost include SIVB and FRC — Silicon Valley "
         "Bank and First Republic, both of which failed in 2023. Survivorship bias therefore "
         "re-enters through the data source even though the universe definition excludes it, and "
         "its direction is knowable: the missing firms are disproportionately those that "
         "collapsed, so the true result is probably somewhat worse than reported. Separately, SEC "
-        "XBRL tags quarterly facts inconsistently, so feature coverage runs 10–40% rather than "
-        "100%, and filing bodies were not downloaded, leaving the textual half of the hypothesis "
+        "XBRL tags quarterly facts inconsistently. Differencing year-to-date flows into discrete "
+        "quarters roughly doubled cash-flow coverage, but it still runs 40–50% rather than "
+        "100%, and the release corpus was incomplete at run time, leaving the textual half "
         "untested. Fixing the price source needs CRSP or an equivalent with delisting coverage.",
         st["body"]))
 
@@ -314,7 +354,7 @@ def build(out_path: Path) -> Path:
         "<font face='Courier' size='8'>make reproduce</font> regenerates every figure and number "
         "here and hashes each artefact; <font face='Courier' size='8'>make verify</font> diffs "
         "against the committed manifest, and CI fails if a hash moves. Method, the falsification "
-        "criteria fixed before the run (three of five are met), and a catalogue of the ways this "
+        "criteria fixed before the run (none of the five is met), and a catalogue of the ways this "
         f'study could flatter itself: <a href="{REPO_URL}" color="#0b6bcb">'
         f'{REPO_URL.replace("https://", "")}</a>.', st["body"]))
 

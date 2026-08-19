@@ -118,6 +118,80 @@ def _verdicts(aggregate: dict, metadata: dict) -> list[Verdict]:
     ]
 
 
+def _trend_caption(trend: float | None, p_value: float | None) -> str:
+    """Describe the shape of the year-by-year bars, whatever shape they are."""
+    if trend is None or p_value is None or pd.isna(trend) or pd.isna(p_value):
+        return "The bars below the line are the years it pointed the wrong way."
+    if p_value >= 0.10:
+        return (
+            "The bars below the line are the years it pointed the wrong way. There is no "
+            "pattern to which years those are: good and bad years are scattered, not trending."
+        )
+    direction = "downward" if trend < 0 else "upward"
+    return (
+        "The bars below the line are the years it pointed the wrong way, and they are not "
+        f"scattered at random: the series has a {direction} slope."
+    )
+
+
+def _trend_paragraph(trend: float | None, p_value: float | None) -> str:
+    """The decay question, answered by the data rather than by the literature.
+
+    A published anomaly is supposed to decay once it is widely traded, so it is
+    tempting to report a decline whether or not one is there. This states what
+    was measured either way, including when the answer is "nothing".
+    """
+    if trend is None or p_value is None or pd.isna(trend) or pd.isna(p_value):
+        return ""
+    if p_value < 0.10:
+        direction = "fell" if trend < 0 else "rose"
+        return (
+            f"<p>Skill {direction} by <strong>{abs(trend):.3f} per year</strong>, with a p-value "
+            f"of <strong>{p_value:.3f}</strong> &mdash; roughly a {p_value:.0%} chance of a trend "
+            "this steep if nothing were really changing. That is what the academic literature "
+            "predicts should happen once a published anomaly becomes widely traded.</p>"
+        )
+    return (
+        "<p>A tempting story to tell here is decay: the effect was documented in 1968, published "
+        "repeatedly, and should have been traded away. This sample does not support that story. "
+        f"The year-on-year trend in skill is {trend:+.3f} with a p-value of {p_value:.2f} &mdash; "
+        "indistinguishable from no trend at all. The good and bad years are scattered, not "
+        "ordered.</p>"
+        "<p>That is worth stating plainly because an earlier version of this study, run on a "
+        "quarter as many companies, found a decline that looked significant. It did not survive "
+        "quadrupling the sample. A pattern across six points that disappears when you add more "
+        "data was never a pattern.</p>"
+    )
+
+
+def _answer(aggregate: dict, metadata: dict, verdicts: list[Verdict]) -> str:
+    """The two-sentence verdict, assembled from what the run actually found."""
+    passed = sum(1 for v in verdicts if v.passed)
+    percentile = aggregate.get("perm_percentile")
+    ic = aggregate.get("mean_ic")
+    t_stat = aggregate.get("ic_tstat_across_years")
+    if passed >= 4:
+        headline = "The short answer: yes, and it survives the checks."
+    elif passed >= 2:
+        headline = "The short answer: partly, and not enough to trade."
+    else:
+        headline = "The short answer: no."
+    body = (
+        f"Ranking companies by the model's prediction beat chance by a whisker on average "
+        f"&mdash; a correlation of {_num(ic, 3)} where zero is no skill &mdash; but with a "
+        f"t-statistic of {_num(t_stat)} that is well inside what luck produces. "
+    )
+    if percentile is not None and not pd.isna(percentile):
+        body += (
+            "The trading results say nothing either way, and that is a measured claim rather "
+            f"than a hedge: shuffling the predictions at random reproduces them, putting the "
+            f"real result at the {percentile:.0f}th percentile of pure noise."
+        )
+    else:
+        body += "The trading results are negative after costs."
+    return f"<p><strong>{headline}</strong> {body}</p>"
+
+
 def _bar_path(x: float, y: float, width: float, height: float, positive: bool) -> str:
     """A bar rounded only at the data end and square where it meets the baseline.
 
@@ -379,6 +453,8 @@ def build_explainer(
     )
     passed = sum(1 for v in verdicts if v.passed)
 
+    trend = aggregate.get("ic_trend_per_year")
+    trend_p = aggregate.get("ic_trend_p")
     over_promised = int((by_year["predicted_spread"] > by_year["realised_spread"]).sum())
     profitable = int((by_year["ann_return_net"] > 0).sum())
     cost_drag = float((by_year["ann_return_gross"] - by_year["ann_return_net"]).mean())
@@ -390,6 +466,9 @@ def build_explainer(
         "profitable_years": profitable,
         "losing_years": len(by_year) - profitable,
         "cost_drag": _pct(cost_drag, 2),
+        "trend_caption": _trend_caption(trend, trend_p),
+        "trend_paragraph": _trend_paragraph(trend, trend_p),
+        "answer": _answer(aggregate, metadata, verdicts),
         "perm_mean": _num(aggregate.get("perm_null_mean")),
         "perm_pct": _num(aggregate.get("perm_percentile"), 0),
         "perm_p": _num(aggregate.get("perm_p_value_one_sided"), 3),
@@ -578,11 +657,7 @@ reported what it found rather than what would have been nicer to find.</p>
 {{start}} to {{end}} &middot; {{n_years}} years of out-of-sample testing</p>
 
 <div class="answer">
-<p><strong>The short answer: mostly no — and the "mostly" is shrinking.</strong> The model
-ranked companies slightly better than chance on average, but not reliably enough to be
-distinguishable from luck, and not nearly well enough to make money after the cost of trading.
-The one finding that <em>is</em> statistically solid is a negative one: whatever predictive
-signal existed early in the sample decayed steadily and had gone by the end of it.</p>
+{{answer}}
 </div>
 
 <h2>What was actually being asked</h2>
@@ -656,19 +731,12 @@ your own trading.</span></li>
 <figure>
 {{ic_chart}}
 <figcaption><strong>Ranking skill, year by year.</strong> Each bar is one year the model had
-never seen. Positive means its ranking pointed the right way; the bars below the line are the
-years it pointed the wrong way. The pattern is not random noise scattered around a positive
-number — it is a downward slope.
+never seen. Positive means its ranking pointed the right way. {{trend_caption}}
 </figcaption>
 <details><summary>Show the numbers</summary>{{ic_table}}</details>
 </figure>
 
-<p>That slope is the study's most statistically solid finding: skill fell by
-<strong>{{trend}} per year</strong>, with a p-value of <strong>{{trend_p}}</strong>. In plain
-terms, there is roughly a {{trend_p}} chance of seeing a decline this steep if nothing were
-really changing. The signal did not so much fail to exist as stop existing during the sample.
-That is exactly what the academic literature predicts should happen once a published anomaly
-becomes widely traded.</p>
+{{trend_paragraph}}
 
 <figure>
 {{spread_chart}}
