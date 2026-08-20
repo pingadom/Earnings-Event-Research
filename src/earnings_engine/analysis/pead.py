@@ -304,3 +304,54 @@ def drift_by_subsample(
     if not rows:
         raise ValueError("no subsample had enough events to test")
     return pd.DataFrame(rows)
+
+
+def feature_age_days(
+    events: pd.DataFrame, stamp_col: str, event_col: str = "t0"
+) -> pd.Series:
+    """How old a feature was, in days, at the moment each event was traded.
+
+    A point-in-time check asks whether a feature was *public* before the trade.
+    It cannot ask whether the feature is about the event -- and those are very
+    different questions. An earnings release is filed as an 8-K within minutes
+    of the announcement, but the XBRL financial statements for that same quarter
+    arrive weeks later in the 10-Q. So the most recent fundamentals available at
+    an announcement describe the *previous* quarter, and a surprise measure
+    built from them is a quarter stale while being perfectly point-in-time
+    correct.
+
+    Reporting this is the only way a reader can tell whether "does the
+    information in an earnings release predict returns" was answered, or whether
+    the study quietly answered "does last quarter's information predict returns"
+    instead.
+    """
+    for column in (stamp_col, event_col):
+        if column not in events.columns:
+            raise KeyError(f"feature_age_days needs {column!r}")
+    stamps = pd.to_datetime(events[stamp_col], utc=True)
+    when = pd.to_datetime(events[event_col])
+    if not isinstance(when.dtype, pd.DatetimeTZDtype):
+        when = when.dt.tz_localize("UTC")
+    return (when - stamps).dt.total_seconds() / 86400.0
+
+
+def contemporaneous(
+    events: pd.DataFrame, stamp_col: str, max_age_days: float = 5.0, event_col: str = "t0"
+) -> pd.DataFrame:
+    """Keep only events whose feature genuinely describes the quarter announced.
+
+    ``max_age_days`` is small on purpose. A filer who submits the 10-Q alongside
+    the 8-K produces an age near zero; anything approaching ninety days is the
+    previous quarter's statements. There is no meaningful middle ground, so the
+    threshold is not sensitive.
+    """
+    age = feature_age_days(events, stamp_col, event_col)
+    keep = age.between(-1.0, max_age_days)
+    log.info(
+        "contemporaneous filter: %d/%d events carry a %s no more than %.0f days old",
+        int(keep.sum()),
+        len(events),
+        stamp_col,
+        max_age_days,
+    )
+    return events.loc[keep.fillna(False)]

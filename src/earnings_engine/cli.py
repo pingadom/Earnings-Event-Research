@@ -25,6 +25,9 @@ from .utils.logging_utils import get_logger, setup_logging
 
 log = get_logger(__name__)
 
+#: Below this, a contemporaneous-only quantile sort is not worth reporting.
+MIN_CONTEMPORANEOUS = 400
+
 
 def _add_common(p: argparse.ArgumentParser) -> None:
     p.add_argument("--config", default=None, help="path to conf/config.yaml")
@@ -559,7 +562,13 @@ def _drift(args, cfg) -> int:
     and a weak model, and only the first is a finding. This command separates
     them with a sort and a mean.
     """
-    from .analysis.pead import drift_by_horizon, drift_by_subsample, sorted_drift
+    from .analysis.pead import (
+        contemporaneous,
+        drift_by_horizon,
+        drift_by_subsample,
+        feature_age_days,
+        sorted_drift,
+    )
     from .data.providers.synthetic import SyntheticProvider, SyntheticSpec
     from .pipeline import (
         build_dataset,
@@ -605,6 +614,44 @@ def _drift(args, cfg) -> int:
     )
     save_stage(quantiles, out, "drift_by_quantile")
     sections["Drift by surprise quantile"] = quantiles.round(5).to_markdown(index=False)
+
+    # 2b. How old was the sorting variable when the trade was placed?
+    #
+    #     A point-in-time check asks whether a feature was public before the
+    #     trade; it cannot ask whether the feature is *about* the event. The
+    #     8-K carrying the announcement is filed within minutes; the XBRL
+    #     statements for that same quarter arrive weeks later in the 10-Q. So a
+    #     surprise measure built from fundamentals can be perfectly
+    #     point-in-time and still describe the previous quarter.
+    stamp = f"available_from_{'sue' if sort_col.startswith('sue') else 'fund'}"
+    if stamp in panel.columns:
+        age = feature_age_days(panel.dropna(subset=[sort_col]), stamp)
+        quantiles_of_age = age.quantile([0.1, 0.25, 0.5, 0.75, 0.9]).round(0)
+        sections["Age of the sorting variable"] = (
+            f"Days between {sort_col!r} becoming public and the announcement it is "
+            f"attached to.\n\n"
+            + quantiles_of_age.rename("days").to_frame().to_markdown()
+            + f"\n\nMedian {quantiles_of_age.loc[0.5]:.0f} days. A median far above zero "
+            "means the sort is on the *previous* quarter's numbers, because the current "
+            "quarter's statements had not been filed yet."
+        )
+        fresh = contemporaneous(panel, stamp, max_age_days=5.0)
+        if len(fresh) >= MIN_CONTEMPORANEOUS:
+            fresh_table = sorted_drift(
+                fresh, sort_col, target, n_quantiles=args.quantiles,
+                n_boot=args.boot, seed=cfg.seed,
+            )
+            save_stage(fresh_table, out, "drift_contemporaneous")
+            sections["Drift on contemporaneous filings only"] = (
+                f"The {len(fresh):,} events whose statements were filed with the "
+                "announcement rather than a quarter later. This is the subset that "
+                "actually tests the stated hypothesis.\n\n"
+                + fresh_table.round(5).to_markdown(index=False)
+            )
+        else:
+            log.warning(
+                "only %d events carry contemporaneous statements; too few to sort", len(fresh)
+            )
 
     # 3. The term structure. Drift accumulates; a spread already complete on the
     #    announcement day is a reaction, and the two are routinely conflated.

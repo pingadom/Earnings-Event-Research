@@ -140,3 +140,42 @@ def test_a_bootstrap_p_value_is_never_exactly_zero():
     spread = sorted_drift(a_panel(0.5, noise=0.001), "sue", "car_1_20", n_boot=200).iloc[-1]
     assert spread["t_stat"] > 10
     assert spread["p_value"] >= 2 / 201
+
+
+def test_feature_age_measures_staleness_not_leakage():
+    """Point-in-time asks 'was it public'. This asks 'is it about this event'."""
+    from earnings_engine.analysis.pead import contemporaneous, feature_age_days
+
+    events = pd.DataFrame(
+        {
+            "t0": pd.to_datetime(["2020-01-30", "2020-04-30", "2020-07-30"]),
+            "available_from_sue": pd.to_datetime(
+                ["2020-01-30", "2020-02-04", "2020-05-01"], utc=True
+            ),
+        }
+    )
+    age = feature_age_days(events, "available_from_sue")
+    assert age.tolist() == pytest.approx([0.0, 86.0, 90.0])
+
+    fresh = contemporaneous(events, "available_from_sue", max_age_days=5.0)
+    assert len(fresh) == 1
+    assert fresh["t0"].iloc[0] == pd.Timestamp("2020-01-30")
+
+
+def test_a_stale_feature_is_still_point_in_time_correct():
+    """The two checks are independent, which is exactly why both are needed.
+
+    Every stamp here precedes its event, so no leakage exists; the features are
+    nonetheless a quarter old and cannot be describing the announcement.
+    """
+    from earnings_engine.analysis.pead import feature_age_days
+
+    events = pd.DataFrame(
+        {
+            "t0": pd.to_datetime(["2020-04-30", "2020-07-30"]),
+            "available_from_sue": pd.to_datetime(["2020-02-04", "2020-05-01"], utc=True),
+        }
+    )
+    age = feature_age_days(events, "available_from_sue")
+    assert (age > 0).all(), "no leakage"
+    assert (age > 60).all(), "and yet a quarter stale"
