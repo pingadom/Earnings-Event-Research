@@ -94,7 +94,24 @@ published one for a day.
 | Deflated Sharpe (12 trials) | **0.00** |
 
 The book does better than shuffled predictions — 85th percentile — but not
-significantly, and it still loses money. Ranking correctly and sizing correctly
+significantly, and it still loses money.
+
+Costs are modelled rather than measured, so the fair question is how wrong the
+model would have to be for the conclusion to change. Scaling every cost
+component together:
+
+| Cost multiple | One-way (bp) | Annual return | Net Sharpe |
+|---:|---:|---:|---:|
+| 0.5× | 2.9 | −0.19% | −0.08 |
+| **1.0× (assumed)** | **5.7** | **−0.70%** | **−0.30** |
+| 1.5× | 8.6 | −1.21% | −0.52 |
+| 2.0× | 11.5 | −1.72% | −0.74 |
+| 3.0× | 17.2 | −2.74% | −1.17 |
+
+At **half** the modelled cost the strategy still loses money. Break-even sits
+near 0.31× — roughly **1.8bp one way**, which is below the bid-offer spread of
+the average S&P 500 constituent before commission or market impact exists at
+all. The conclusion does not depend on the cost assumption being right. Ranking correctly and sizing correctly
 are different skills, and 2024 shows the gap: the model's third-best year for
 ranking (IC 0.072) is its second-worst for profit, because its calibration slope
 was 0.24. The magnitudes were wrong even where the order was right.

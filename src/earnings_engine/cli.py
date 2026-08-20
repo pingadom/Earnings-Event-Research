@@ -370,9 +370,9 @@ def _holdout(args, cfg) -> int:
         sections["Backtest across all held-out years (net of costs)"] = format_stats(
             result.backtest.stats
         )
-        sections["Cost sensitivity"] = result.backtest.cost_sensitivity.round(4).to_markdown(
-            index=False
-        )
+        sensitivity = result.backtest.cost_sensitivity
+        save_stage(sensitivity, out, "cost_sensitivity")
+        sections["Cost sensitivity"] = sensitivity.round(4).to_markdown(index=False)
 
     if diagnostics is not None:
         sections.update(diagnostics.to_markdown())
