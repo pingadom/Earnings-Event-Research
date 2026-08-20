@@ -146,3 +146,18 @@ def test_a_derived_quarter_is_labelled_by_the_quarter_it_isolates():
     assert out["2020-09-30"]["fiscal_period"] == "Q3"
     assert out["2020-12-31"]["fiscal_period"] == "Q4"
     assert out["2020-12-31"]["form"] == "10-K", "the source form is still recorded"
+
+
+def test_a_quarter_the_filer_labelled_FY_is_still_a_quarter():
+    """The duration is the fact's; the label is only the filer's opinion of it.
+
+    Thousands of issuers tag the fourth quarter inside their 10-K as "FY" while
+    the fact itself covers ninety days. Believing the label either discards the
+    observation as annual or lets a real quarter be differenced as a year.
+    """
+    facts = [fact("2020-10-01", "2020-12-31", 180.0, "2021-02-15", "fy", form="10-K", fp="FY")]
+    out = by_period(quarterly_flow_records(facts, allowed_forms=FORMS, **WINDOW))
+    record = out["2020-12-31"]
+    assert record["fiscal_period"] == "Q4"
+    assert record["value"] == pytest.approx(180.0), "the value must not be touched"
+    assert record["derivation"] is None

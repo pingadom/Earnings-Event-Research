@@ -182,12 +182,24 @@ def quarterly_flow_records(
 
 
 def _native(record: dict[str, Any]) -> dict[str, Any]:
+    """A fact that already spans a single quarter, passed through.
+
+    With one correction. A sizeable minority of filers tag the fourth quarter
+    inside their 10-K with ``fp = "FY"`` even though the fact covers ninety-odd
+    days -- on this sample, every one of the four thousand such facts spans a
+    mean of 91 days. The label is the filer's, the duration is the fact's, and
+    the duration is what the value actually describes. Trusting the label would
+    either drop the observation as annual or, worse, let a genuine quarter be
+    differenced as though it were a year.
+    """
+    reported = str(record["fiscal_period"]).upper()
+    fiscal_period = "Q4" if reported in {"FY", "CY"} else record["fiscal_period"]
     return {
         "accession": record["accession"],
         "period_end": record["period_end"],
         "form": record["form"],
         "fiscal_year": record["fiscal_year"],
-        "fiscal_period": record["fiscal_period"],
+        "fiscal_period": fiscal_period,
         "filed": record["filed"],
         "value": record["value"],
         "fact_start": str(record["period_start"].date()),
