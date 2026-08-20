@@ -13,7 +13,7 @@ import pytest
 from earnings_engine.data.constituents import download_sp500_membership, tickers_for_window
 from earnings_engine.data.earnings import download_yahoo_earnings
 from earnings_engine.data.fama_french import FF3_URL, FF5_URL, MOM_URL, download_fama_french_daily
-from earnings_engine.data.providers.local import LocalProvider, _quarterise_annual_flows
+from earnings_engine.data.providers.local import LocalProvider, _reject_annual_flows
 from earnings_engine.data.schemas import FILING_COLUMNS
 from earnings_engine.data.sec_download import SecConfigurationError, SecDownloader
 from earnings_engine.data.storage import SymbolCache
@@ -130,32 +130,63 @@ def test_sec_concept_mapping_retains_accession_and_acceptance_time():
     assert "RevenueFromContract" in frame.loc[0, "provenance_json"]
 
 
-def test_annual_flow_is_quarterised_only_from_complete_observed_quarters():
+def test_annual_flows_never_reach_the_quarterly_panel():
+    """Quarters are derived once, upstream, where the filing timestamps live.
+
+    This adapter used to derive Q4 itself by subtracting three standalone
+    quarters from the annual figure. Once the acquisition layer began
+    differencing year-to-date facts, that ran a second time on values it had
+    already isolated -- and subtracting three quarters from one quarter still
+    produces a plausible number, so nothing complained. The adapter's job is now
+    only to refuse anything still annual.
+    """
     frame = pd.DataFrame(
         {
             "ticker": ["AAPL"] * 5 + ["MSFT"] * 3,
             "period_end": pd.to_datetime(
                 [
-                    "2024-03-31",
-                    "2024-06-30",
-                    "2024-09-30",
-                    "2024-12-31",
-                    "2024-12-31",
-                    "2024-03-31",
-                    "2024-06-30",
-                    "2024-12-31",
+                    "2024-03-31", "2024-06-30", "2024-09-30", "2024-12-31", "2024-12-31",
+                    "2024-03-31", "2024-06-30", "2024-12-31",
                 ]
             ),
-            "fiscal_period": ["Q1", "Q2", "Q3", "FY", "FY", "Q1", "Q2", "FY"],
+            # The Q4 rows carry the label the acquisition layer now assigns.
+            "fiscal_period": ["Q1", "Q2", "Q3", "Q4", "FY", "Q1", "Q2", "FY"],
             "raw_item": ["revenue"] * 4 + ["eps"] + ["revenue"] * 3,
-            "value": [10.0, 20.0, 30.0, 100.0, 5.0, 10.0, 20.0, 100.0],
+            "value": [10.0, 20.0, 30.0, 40.0, 5.0, 10.0, 20.0, 100.0],
         }
     )
-    result = _quarterise_annual_flows(frame)
-    q4 = result.loc[result["ticker"].eq("AAPL") & result["fiscal_period"].eq("Q4_DERIVED"), "value"]
-    assert q4.iloc[0] == 40.0
-    assert not ((result["ticker"].eq("MSFT")) & result["fiscal_period"].eq("FY")).any()
-    assert not result["raw_item"].eq("eps").any()
+    result = _reject_annual_flows(frame)
+
+    kept = result.loc[result["ticker"].eq("AAPL") & result["fiscal_period"].eq("Q4"), "value"]
+    assert kept.iloc[0] == 40.0, "an already-derived quarter must pass through untouched"
+    assert not (result["fiscal_period"].astype(str).str.upper().eq("FY")).any()
+    assert not result["raw_item"].eq("eps").any(), "annual EPS is not additive"
+    # Every quarterly observation survives.
+    assert len(result) == 6
+
+
+def test_rejecting_annual_flows_is_not_quadratic():
+    """The routine this replaced rebuilt two string columns per row.
+
+    At real scale that came to two hundred million string operations and made
+    the adapter the slowest step in the entire study.
+    """
+    import time
+
+    n = 40_000
+    frame = pd.DataFrame(
+        {
+            "ticker": [f"T{i % 400}" for i in range(n)],
+            "period_end": pd.to_datetime("2024-03-31"),
+            "fiscal_period": ["Q1", "Q2", "Q3", "FY"] * (n // 4),
+            "raw_item": ["revenue"] * n,
+            "value": 1.0,
+        }
+    )
+    started = time.perf_counter()
+    result = _reject_annual_flows(frame)
+    assert time.perf_counter() - started < 2.0
+    assert len(result) == n * 3 // 4
 
 
 def test_sec_user_agent_is_required(tmp_path):

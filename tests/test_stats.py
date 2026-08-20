@@ -82,3 +82,22 @@ def test_summary_table_covers_every_estimator_and_window(study):
         "cluster_bootstrap",
     }
     assert table["n"].min() > 0
+
+
+def test_cluster_bootstrap_is_fast_enough_to_use_at_scale():
+    """The obvious implementation rebuilt an array per draw and was unusable.
+
+    Not a micro-benchmark for its own sake: at 13,000 events and 2,000 draws the
+    naive version took longer than the rest of the study combined, which is the
+    difference between a test that gets run and one that gets skipped.
+    """
+    import time
+
+    rng = np.random.default_rng(0)
+    clusters = np.repeat(np.arange(2700), 5)
+    values = rng.normal(size=clusters.size)
+    started = time.perf_counter()
+    result = cluster_bootstrap_ci(values, clusters, n_boot=2000, seed=1)
+    assert time.perf_counter() - started < 10.0
+    assert result.n == clusters.size
+    assert result.ci_low < result.mean < result.ci_high

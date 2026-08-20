@@ -149,14 +149,29 @@ def cluster_bootstrap_ci(
     if v.empty:
         return TestResult(0, np.nan, np.nan, np.nan, np.nan, np.nan, np.nan, "cluster_bootstrap")
 
-    groups = [g.to_numpy() for _, g in v.groupby(c.to_numpy(), sort=False)]
-    k = len(groups)
+    # Each cluster is reduced once to a sum and a count. The mean of a union of
+    # clusters is recoverable from those two numbers, so the resampling loop
+    # never rebuilds an array: it indexes two vectors and divides. Building the
+    # concatenation explicitly, which is the obvious way to write this, made a
+    # 2,000-draw bootstrap over 13,000 events take longer than the entire rest
+    # of the study.
+    codes, _labels = pd.factorize(c.to_numpy(), sort=False)
+    n_clusters = int(codes.max()) + 1
+    sums = np.bincount(codes, weights=v.to_numpy(), minlength=n_clusters)
+    counts = np.bincount(codes, minlength=n_clusters).astype("float64")
+
     rng = np.random.default_rng(seed)
-    means = np.empty(n_boot)
-    for b in range(n_boot):
-        pick = rng.integers(0, k, size=k)
-        sample = np.concatenate([groups[i] for i in pick])
-        means[b] = sample.mean()
+    picks = rng.integers(0, n_clusters, size=(n_boot, n_clusters))
+    drawn_counts = counts[picks].sum(axis=1)
+    with np.errstate(invalid="ignore", divide="ignore"):
+        means = np.where(drawn_counts > 0, sums[picks].sum(axis=1) / drawn_counts, np.nan)
+    means = means[np.isfinite(means)]
+    if means.size == 0:
+        return TestResult(
+            int(v.size), float(v.mean()), np.nan, np.nan, np.nan, np.nan, np.nan,
+            "cluster_bootstrap",
+        )
+    k = n_clusters
     lo, hi = np.quantile(means, [alpha / 2, 1 - alpha / 2])
     mean = float(v.mean())
     se = float(means.std(ddof=1))

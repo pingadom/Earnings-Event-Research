@@ -71,6 +71,7 @@ def build_dataset(
     events = provider.get_events(tickers, start, end)
     aligned = align_events(events, prices, config.events)
     aligned = universe.filter_events(aligned, "t0")
+    aligned = _apply_liquidity(aligned, prices, universe, config)
 
     fundamentals = None
     if with_fundamentals and hasattr(provider, "get_fundamentals"):
@@ -110,6 +111,41 @@ def build_dataset(
             "static_universe": universe.static_membership,
         },
     )
+
+
+def _apply_liquidity(events: pd.DataFrame, prices: pd.DataFrame, universe, config):
+    """Drop events that were not tradable, and keep the measure that decided it.
+
+    ``Universe.liquidity_filter`` had been written, tested, and never called, so
+    ``min_price`` and ``min_dollar_volume`` in the config were documenting a
+    screen that did not run. Applying it matters twice over: a delisted stock
+    trading at thirty cents should not enter the book, and the trailing dollar
+    volume it computes is the only size proxy available here that needs no data
+    beyond prices.
+
+    ``adv20`` is a twenty-day trailing median lagged one session, evaluated at
+    ``t0`` -- the session the position is opened. Nothing after the announcement
+    enters it, so it can be used both as a filter and as a subsample key without
+    leaking.
+    """
+    flags = universe.liquidity_filter(
+        prices, config.universe.min_price, config.universe.min_dollar_volume
+    )
+    merged = events.merge(
+        flags, left_on=["ticker", "t0"], right_on=["ticker", "date"], how="left"
+    ).drop(columns=["date"])
+    # A missing flag means no trailing window yet, which is not evidence of
+    # illiquidity; those events are kept and simply carry no adv20.
+    drop = merged["tradable"].eq(False)
+    if int(drop.sum()):
+        log.info(
+            "liquidity filter dropped %d/%d event(s) below %s price or %s median dollar volume",
+            int(drop.sum()),
+            len(merged),
+            config.universe.min_price,
+            f"{config.universe.min_dollar_volume:,.0f}",
+        )
+    return merged.loc[~drop].drop(columns=["tradable"]).reset_index(drop=True)
 
 
 def _universe_from(provider, tickers, config: Config) -> Universe:

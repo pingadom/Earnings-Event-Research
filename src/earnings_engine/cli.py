@@ -67,6 +67,20 @@ def build_parser() -> argparse.ArgumentParser:
     _add_common(study)
     study.add_argument("--provider", default="yahoo")
 
+    drift = sub.add_parser(
+        "drift",
+        help="does the effect exist at all: unconditional and surprise-sorted drift",
+    )
+    _add_common(drift)
+    drift.add_argument("--provider", default="synthetic")
+    drift.add_argument("--n-tickers", type=int, default=150)
+    drift.add_argument(
+        "--sort-by", default="sue_timeseries", help="the surprise measure to sort on"
+    )
+    drift.add_argument("--quantiles", type=int, default=5)
+    drift.add_argument("--subsamples", type=int, default=3, help="liquidity groups to split into")
+    drift.add_argument("--boot", type=int, default=2000, help="cluster bootstrap draws")
+
     research = sub.add_parser("research", help="full pipeline: features, model, backtest")
     _add_common(research)
     research.add_argument("--provider", default="synthetic")
@@ -142,6 +156,8 @@ def main(argv: list[str] | None = None) -> int:
         return _vendor_check(args, cfg)
     if args.command == "demo":
         return _demo(args, cfg)
+    if args.command == "drift":
+        return _drift(args, cfg)
     if args.command == "holdout":
         return _holdout(args, cfg)
     if args.command in {"ingest", "event-study", "research"}:
@@ -530,6 +546,109 @@ def _pipeline(provider, cfg, args, *, full: bool, label: str, tickers=None) -> i
     report = write_report(out, title=f"Earnings event study - {label}", sections=sections,
                           figures=figures, metadata=metadata)
     print(f"report -> {report}")
+    return 0
+
+
+
+
+def _drift(args, cfg) -> int:
+    """Does post-earnings drift exist in this sample, before any model touches it?
+
+    Deliberately model-free. The holdout study answers "can a model rank
+    companies"; a negative answer there is consistent with both an absent effect
+    and a weak model, and only the first is a finding. This command separates
+    them with a sort and a mean.
+    """
+    from .analysis.pead import drift_by_horizon, drift_by_subsample, sorted_drift
+    from .data.providers.synthetic import SyntheticProvider, SyntheticSpec
+    from .pipeline import (
+        build_dataset,
+        build_feature_panel,
+        run_event_study,
+        save_stage,
+        significance_table,
+    )
+    from .reporting.tables import format_significance_table, write_report
+
+    out = Path(args.out)
+    out.mkdir(parents=True, exist_ok=True)
+    if args.provider == "synthetic":
+        provider = SyntheticProvider(
+            SyntheticSpec(
+                n_tickers=args.n_tickers, start=args.start, end=args.end, seed=cfg.seed
+            )
+        )
+    else:
+        provider = _make_provider(args.provider, cfg)
+
+    tickers = args.tickers.split(",") if args.tickers else None
+    dataset = build_dataset(provider, cfg, args.start, args.end, tickers)
+    study = run_event_study(dataset, cfg)
+    panel = build_feature_panel(dataset, study, cfg)
+
+    sections: dict[str, str] = {}
+
+    # 1. Is the average announcement followed by anything, in any window?
+    table = significance_table(study, cfg, n_boot=args.boot)
+    save_stage(table, out, "event_study")
+    sections["Unconditional event study"] = format_significance_table(table)
+
+    # 2. Sorted on surprise -- the Bernard and Thomas (1989) exhibit.
+    sort_col = args.sort_by
+    if sort_col not in panel.columns:
+        print(f"CONFIGURATION ERROR: {sort_col!r} is not in the feature panel", file=sys.stderr)
+        return 2
+    target = cfg.model.target
+    quantiles = sorted_drift(
+        panel, sort_col, target, n_quantiles=args.quantiles,
+        n_boot=args.boot, seed=cfg.seed,
+    )
+    save_stage(quantiles, out, "drift_by_quantile")
+    sections["Drift by surprise quantile"] = quantiles.round(5).to_markdown(index=False)
+
+    # 3. The term structure. Drift accumulates; a spread already complete on the
+    #    announcement day is a reaction, and the two are routinely conflated.
+    estimator = target.replace("car_", "").rsplit("_", 2)[0]
+    horizons = {
+        f"[{lo},{hi}]": f"car_{estimator}_{lo}_{hi}" for lo, hi in cfg.returns.windows
+    }
+    by_horizon = drift_by_horizon(
+        panel, sort_col, horizons, n_quantiles=args.quantiles,
+        n_boot=args.boot, seed=cfg.seed,
+    )
+    save_stage(by_horizon, out, "drift_by_horizon")
+    sections["Spread by horizon"] = by_horizon.round(5).to_markdown(index=False)
+
+    # 4. Where the effect is supposed to live. Drift concentrates in small,
+    #    illiquid names; an index universe is the least likely place to find it,
+    #    so absence in the *least* liquid slice is the informative result.
+    if "adv20" in panel.columns:
+        names = ("least liquid", "middle", "most liquid")[: args.subsamples]
+        by_liquidity = drift_by_subsample(
+            panel, sort_col, target, "adv20", n_groups=args.subsamples,
+            group_names=names if len(names) == args.subsamples else None,
+            n_quantiles=args.quantiles, n_boot=args.boot, seed=cfg.seed,
+        )
+        save_stage(by_liquidity, out, "drift_by_liquidity")
+        sections["Spread by liquidity"] = by_liquidity.round(5).to_markdown(index=False)
+    else:
+        log.warning("no adv20 column in the panel; skipping the liquidity split")
+
+    report = write_report(
+        out,
+        title=f"Unconditional drift — {args.provider}",
+        sections=sections,
+        figures={},
+        metadata={
+            "events": int(len(panel)),
+            "sorted_on": sort_col,
+            "target": target,
+            "bootstrap_draws": args.boot,
+        },
+    )
+    for name, body in sections.items():
+        print(f"\n## {name}\n{body}")
+    print(f"\nreport -> {report}")
     return 0
 
 

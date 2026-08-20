@@ -42,6 +42,11 @@ _META = {
     "form",
     "filed_at_utc",
     "days_since_period_end",
+    # The trailing dollar volume that decided tradability. It is a property of
+    # the stock, not information released at the announcement, and the analysis
+    # that splits the sample by it needs it in raw dollars -- a feature column
+    # would be cross-sectionally normalised and the split would report z-scores.
+    "adv20",
     "_source_file",
     "_restated",
 }

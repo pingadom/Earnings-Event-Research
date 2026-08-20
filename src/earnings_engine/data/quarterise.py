@@ -163,6 +163,13 @@ def quarterly_flow_records(
             if not additive or position == 0:
                 continue
             prior = group[position - 1]
+            # The label must describe the quarter that was isolated, not the
+            # cumulative window it came out of. A Q4 derived from a 10-K's
+            # twelve-month figure inherited "FY" before this, and a downstream
+            # adapter recognised it as an annual flow and differenced it a
+            # second time -- silently, because the result is still a plausible
+            # number. Facts here share a fiscal-year start, so position within
+            # the sorted sequence is the quarter index.
             gap = int((record["period_end"] - prior["period_end"]).days)
             if not QUARTER_MIN_DAYS <= gap <= QUARTER_MAX_DAYS:
                 continue
@@ -170,7 +177,7 @@ def quarterly_flow_records(
                 # The subtrahend was published *after* the cumulative figure, so
                 # the difference was not knowable at this filing. Drop it.
                 continue
-            out.append(_derived(record, prior, start))
+            out.append(_derived(record, prior, start, quarter=position + 1))
     return out
 
 
@@ -192,7 +199,7 @@ def _native(record: dict[str, Any]) -> dict[str, Any]:
 
 
 def _derived(
-    record: dict[str, Any], prior: dict[str, Any], start: pd.Timestamp
+    record: dict[str, Any], prior: dict[str, Any], start: pd.Timestamp, quarter: int
 ) -> dict[str, Any]:
     quarter_start = prior["period_end"] + pd.Timedelta(days=1)
     return {
@@ -200,7 +207,7 @@ def _derived(
         "period_end": record["period_end"],
         "form": record["form"],
         "fiscal_year": record["fiscal_year"],
-        "fiscal_period": record["fiscal_period"],
+        "fiscal_period": f"Q{quarter}" if 1 <= quarter <= 4 else record["fiscal_period"],
         # Knowable only once both inputs are public.
         "filed": max(record["filed"], prior["filed"]),
         "value": record["value"] - prior["value"],

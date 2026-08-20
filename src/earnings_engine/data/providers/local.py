@@ -42,39 +42,42 @@ _ADDITIVE_FLOWS = {
 }
 
 
-def _quarterise_annual_flows(long: pd.DataFrame) -> pd.DataFrame:
-    """Derive Q4 from an annual additive flow only when Q1-Q3 are observed.
+def _reject_annual_flows(long: pd.DataFrame) -> pd.DataFrame:
+    """Remove any flow that still describes a year rather than a quarter.
 
-    This is an exact residual, not interpolation. If any standalone quarterly
-    component is absent, the annual flow is removed from the quarterly research
-    adapter and remains available only in the raw wide fundamentals file.
+    Flows arrive quarterly by construction: the acquisition layer differences
+    cumulative year-to-date XBRL facts into discrete quarters before anything
+    is written to disk (see :mod:`earnings_engine.data.quarterise`). This is the
+    guard for the case that survives that -- a `fundamentals.parquet` written
+    before quarterisation existed, whose 10-K rows carry twelve-month figures.
+    Mixing them into a quarterly panel makes every fourth observation four times
+    too large.
+
+    This replaced a routine that tried to *derive* Q4 by subtracting three
+    standalone quarters from the annual figure. That was wrong twice over. It
+    was quadratic -- it rebuilt two string columns over the whole frame inside a
+    per-row loop, which came to two hundred million string operations and
+    minutes of runtime. Worse, once the acquisition layer began emitting derived
+    quarters it double-differenced them: a Q4 that had already been isolated
+    upstream was recognised as an annual flow and had Q1 to Q3 subtracted from
+    it a second time, silently, because the result is still a plausible number.
+    Deriving quarters belongs in one place, and that place has the filing
+    timestamps needed to do it under point-in-time discipline.
+
+    Annual earnings per share is dropped rather than differenced: the
+    denominator is a weighted average share count, so the arithmetic that works
+    for additive flows does not apply.
     """
-    out = long.copy()
-    fiscal = out["fiscal_period"].astype("string").str.upper()
-    annual = fiscal.eq("FY")
-    for index in out.index[annual & out["raw_item"].isin(_ADDITIVE_FLOWS)]:
-        row = out.loc[index]
-        period_end = pd.Timestamp(row["period_end"])
-        candidate_fiscal = out["fiscal_period"].astype("string").str.upper()
-        candidate_dates = pd.to_datetime(out["period_end"])
-        candidates = out.loc[
-            out["ticker"].eq(row["ticker"])
-            & out["raw_item"].eq(row["raw_item"])
-            & candidate_fiscal.isin({"Q1", "Q2", "Q3"})
-            & candidate_dates.between(
-                period_end - pd.Timedelta(days=370), period_end - pd.Timedelta(days=1)
-            )
-        ].sort_values("period_end")
-        candidates = candidates.drop_duplicates("fiscal_period", keep="last")
-        labels = set(candidates["fiscal_period"].astype(str).str.upper())
-        if labels == {"Q1", "Q2", "Q3"}:
-            out.loc[index, "value"] = float(row["value"]) - float(candidates["value"].sum())
-            out.loc[index, "fiscal_period"] = "Q4_DERIVED"
-        else:
-            out.loc[index, "value"] = pd.NA
-    # Annual EPS is not additive because the denominator is weighted shares.
-    out.loc[annual & out["raw_item"].eq("eps"), "value"] = pd.NA
-    return out.dropna(subset=["value"])
+    fiscal = long["fiscal_period"].astype("string").str.upper()
+    annual = fiscal.eq("FY") | fiscal.eq("CY")
+    drop = annual & long["raw_item"].isin(_ADDITIVE_FLOWS | {"eps"})
+    if int(drop.sum()):
+        log.info(
+            "dropped %d annual flow observation(s) from the quarterly panel; these come from a "
+            "fundamentals file written before year-to-date quarterisation",
+            int(drop.sum()),
+        )
+    return long.loc[~drop]
 
 
 @register("local")
@@ -333,7 +336,7 @@ class LocalProvider:
         long = long.sort_values("available_from_utc").drop_duplicates(
             ["ticker", "period_end", "item"], keep="first"
         )
-        long = _quarterise_annual_flows(long)
+        long = _reject_annual_flows(long)
         frame = long[["ticker", "period_end", "available_from_utc", "item", "value"]]
         return FUNDAMENTALS.validate(frame.reset_index(drop=True))
 

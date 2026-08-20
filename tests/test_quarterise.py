@@ -130,3 +130,19 @@ def test_facts_missing_a_start_date_are_not_flows():
         allowed_forms=FORMS,
         **WINDOW,
     ) == []
+
+
+def test_a_derived_quarter_is_labelled_by_the_quarter_it_isolates():
+    """Not by the cumulative window it came out of.
+
+    A Q4 derived from a 10-K's twelve-month figure used to inherit "FY". A
+    downstream adapter then recognised it as an annual flow and differenced it
+    a second time -- silently, because subtracting three quarters from one
+    quarter still yields a plausible-looking number.
+    """
+    out = by_period(quarterly_flow_records(a_fiscal_year(), allowed_forms=FORMS, **WINDOW))
+    assert out["2020-03-31"]["fiscal_period"] == "Q1"
+    assert out["2020-06-30"]["fiscal_period"] == "Q2"
+    assert out["2020-09-30"]["fiscal_period"] == "Q3"
+    assert out["2020-12-31"]["fiscal_period"] == "Q4"
+    assert out["2020-12-31"]["form"] == "10-K", "the source form is still recorded"
