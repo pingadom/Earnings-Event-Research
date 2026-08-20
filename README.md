@@ -58,6 +58,28 @@ the predictions shuffled** puts the realised −0.79 at the *47th percentile* of
 pure noise. The trading result carries no information in either direction, and
 that is measured rather than asserted.
 
+**Sorted on earnings surprise, the spread has the wrong sign — and that is an
+artefact worth understanding.** Ranking every announcement by its surprise and
+holding twenty days gives −88bp with t = −3.65: companies that *beat*
+expectations underperform. It accumulates over the twenty days rather than
+appearing on day one, and it is monotonically strongest in the *most* liquid
+names — the opposite of every theory of why drift should exist.
+
+The diagnostic that explains it is now printed beside the table: **the median
+sorting variable is 83 days old at the announcement it is attached to.** An
+earnings release is filed as an 8-K within minutes; the XBRL statements for that
+quarter arrive weeks later in the 10-Q, so the newest fundamentals at any
+announcement describe the *previous* quarter. Every one of those features is
+point-in-time correct — nothing leaks — and none is about the event it is
+attached to. A point-in-time check asks whether a feature was public before the
+trade; it cannot ask whether the feature is *about* the event, and this project
+had only ever asked the first question.
+
+On the 1,982 events whose statements were filed *with* the announcement — the
+subset where the hypothesis can actually be tested — the spread is −59bp at
+t = −1.03, p = 0.59. Nothing. See
+[§R2](docs/results.md#r2-does-the-drift-exist-at-all-before-any-model-touches-it).
+
 **A previous version of this README reported a significant decay trend
 (−0.023/yr, p = 0.033) as its substantive finding. It did not survive
 quadrupling the sample** — on 466 companies the trend is +0.006/yr, p = 0.61.
@@ -68,7 +90,7 @@ most transferable lesson here.
 What the factor regression *does* find is that the strategy is a quality-and-value
 portfolio in disguise: significant loadings on HML (t = 2.9), RMW (t = 4.1) and
 CMA (t = 3.5), and against momentum (t = −2.9), R² = 0.17.
-[§R5](docs/results.md#r5-the-limitations-that-matter) quantifies the bias that
+[§R6](docs/results.md#r6-the-limitations-that-matter) quantifies the bias that
 survived: Yahoo serves no price history for **61% of the index-deleted names**,
 against 5% of survivors — including SIVB and FRC.
 

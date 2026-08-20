@@ -104,7 +104,103 @@ money on a signal that ranks correctly.
 
 ![Predicted vs realised](figures/real/predicted_vs_realised.png)
 
-## R2. Is there alpha? No — and the tilts are larger than they were
+## R2. Does the drift exist at all, before any model touches it?
+
+R1 says a model could not rank companies by their subsequent abnormal return.
+That is a weaker claim than it looks, because a weak model explains it exactly
+as well as an absent effect does, and only the second is a finding. This section
+removes the model.
+
+`eee drift` sorts every announcement by its earnings surprise and looks at what
+the top and bottom groups did next — no fitting, no training window, no
+hyperparameter. Every test resamples whole *event dates*, because hundreds of
+announcements land in the same week and share whatever the market did that week.
+
+### The average announcement is followed by nothing
+
+| Window | Mean CAR (bp) | t (clustered) | 95% CI |
+|---|---:|---:|---|
+| [0,0] | +4.4 | 1.17 | (−3.1, +11.9) |
+| [0,4] | +4.5 | 0.85 | (−5.7, +14.9) |
+| [1,5] | −1.4 | −0.32 | (−9.8, +7.3) |
+| [1,20] | −2.4 | −0.28 | (−19.2, +15.1) |
+
+13,675 announcements, market-model abnormal returns. This is the expected result
+and is reported for completeness: sector-relative returns average to roughly zero
+by construction. The question is what happens once they are *sorted*.
+
+### Sorted on surprise, the spread has the wrong sign
+
+| Quantile | n | Mean CAR[1,20] (bp) | t |
+|---|---:|---:|---:|
+| Q1 (worst surprise) | 1,910 | +30.8 | 1.65 |
+| Q2 | 1,910 | +37.5 | 2.02 |
+| Q3 | 1,910 | +10.3 | 0.56 |
+| Q4 | 1,910 | −18.5 | −1.10 |
+| Q5 (best surprise) | 1,910 | −56.9 | −3.06 |
+| **Q5 − Q1** | **3,820** | **−87.6** | **−3.65** |
+
+Companies that beat expectations *underperformed* by 88bp over the following
+month, monotonically across quantiles, at t = −3.65. That is the opposite sign
+to post-earnings-announcement drift.
+
+It also has the right shape to be real. The spread is absent on the announcement
+day ([0,0]: −13.9bp, t = −1.01) and after a week ([1,5]: −8.2bp, t = −0.63), and
+only becomes significant over twenty days ([1,20]: −87.6bp, t = −3.65). It
+accumulates, which is what distinguishes drift from an announcement-day reaction.
+
+And it is strongest exactly where it should be weakest:
+
+| Liquidity third | Median ADV | Q5 − Q1 (bp) | t |
+|---|---:|---:|---:|
+| Least liquid | $70m | −39.6 | −0.91 |
+| Middle | $149m | −87.8 | −2.24 |
+| Most liquid | $408m | −123.1 | −3.08 |
+
+Every theory of why drift exists — slow information diffusion, limited attention,
+costly arbitrage — predicts it should concentrate in the *least* traded names.
+Here it is monotonically strongest in the most traded ones.
+
+### Why it is an artefact, and what that means
+
+The three warning signs above are enough to be suspicious. The diagnostic that
+explains them is now printed with the table:
+
+> **The median sorting variable is 83 days old at the announcement it is
+> attached to.**
+
+This is structural, not a bug in the ordinary sense. An earnings release is filed
+as an 8-K within minutes of the announcement. The XBRL financial statements for
+that same quarter arrive weeks later, in the 10-Q. So the most recent
+fundamentals available at an announcement describe the **previous** quarter, and
+every feature built from them is a quarter stale.
+
+Critically, all of them are *point-in-time correct*. Nothing leaks; the validator
+is right to pass them. A point-in-time check asks whether a feature was public
+before the trade. It cannot ask whether the feature is **about** the event — and
+until now this project had only ever asked the first question.
+
+Restricting to the 1,982 events whose financial statements were filed *with* the
+announcement — the subset on which the stated hypothesis can actually be tested:
+
+| Quantile | n | Mean CAR[1,20] (bp) | t |
+|---|---:|---:|---:|
+| Q1 | 397 | −3.0 | −0.07 |
+| Q5 | 397 | −61.5 | −1.45 |
+| **Q5 − Q1** | **794** | **−58.5** | **−1.03** (p = 0.59) |
+
+Nothing. The significant reversal was a property of sorting on a quarter-old
+measure, not of earnings announcements.
+
+**This changes what the null in R1 means.** The model was largely being fed the
+previous quarter's numbers, so R1 is not yet a clean test of the hypothesis
+either. It is now a null with a known cause rather than an unknown one, and the
+fix is identified: the earnings figures have to come from the announcement
+itself. The press releases are acquired (§R6); parsing revenue and earnings per
+share out of them would make the surprise measure contemporaneous, and is the
+single highest-value change available to this project.
+
+## R3. Is there alpha? No — and the tilts are larger than they were
 
 | term | estimate | t | p |
 |---|---:|---:|---:|
@@ -133,7 +229,7 @@ is quality-and-value exposure that costs a few basis points to buy directly.
 
 ![Factor exposures](figures/real/factor_loadings.png)
 
-## R3. Multiple testing and a second methodology
+## R4. Multiple testing and a second methodology
 
 Eight specifications are logged in `conf/trials.json`. The deflated Sharpe ratio
 is **0.03**. It does not survive, which is unsurprising given the raw Sharpe is
@@ -143,7 +239,7 @@ Fama–MacBeth over monthly cross-sections finds **no feature significant at 5%*
 The portfolio sort and the regression agree, which is the outcome that should
 increase confidence in a null.
 
-## R4. What would have made this result look good
+## R5. What would have made this result look good
 
 Worth being explicit, because each is a decision that was available and refused:
 
@@ -160,7 +256,7 @@ Worth being explicit, because each is a decision that was available and refused:
   finding rather than as noise.
 - **Not log the trials.** The deflated Sharpe needs an honest N.
 
-## R5. The limitations that matter
+## R6. The limitations that matter
 
 **A point-in-time universe is not enough if the price source cannot serve
 delisted names.** Yahoo returns no price history for **61% of the index-deleted
@@ -192,7 +288,7 @@ Two further limitations:
   carry, producing a coefficient of exactly zero for every one of them with
   nothing raised.
 
-## R6. Reading this honestly
+## R7. Reading this honestly
 
 The pre-registered falsification criteria in
 [`methodology.md` §9](methodology.md#9-what-would-falsify-the-result) were
