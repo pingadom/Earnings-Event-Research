@@ -34,6 +34,12 @@ If you want to know what this found without reading a methods section, start
 with the explainer. It is generated from the same run artefacts as everything
 else, so it cannot disagree with them.
 
+**New to any of this?** [**docs/how-it-works.md**](docs/how-it-works.md)
+([PDF](docs/how-it-works.pdf)) explains the whole project from first
+principles — what post-earnings drift is, what an abnormal return is, and what
+every metric here means and how to read it. It assumes you know what a share is
+and nothing beyond that.
+
 **Earnings fundamentals rank subsequent abnormal returns. Nothing here is
 tradable.** 466 S&P 500 companies, **13,675 real earnings announcements**
 timestamped from SEC filings, plus **23,914 earnings press releases**, held out

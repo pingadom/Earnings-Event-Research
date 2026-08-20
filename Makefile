@@ -24,6 +24,9 @@ test:             ## Run the test suite (offline only)
 test-cov:         ## Run tests with coverage
 	pytest -m "not network" --cov=earnings_engine --cov-report=term-missing
 
+guide:            ## Render docs/how-it-works.md to PDF (needs pandoc + wkhtmltopdf)
+	python scripts/make_guide.py
+
 demo:             ## End-to-end run on synthetic data; writes to reports/
 	python -m earnings_engine.cli demo --out reports/demo
 

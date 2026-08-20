@@ -890,6 +890,7 @@ cross-sectional regressions; the repository has the code, the tests and the full
 <div class="links">
   <a href="{{dashboard_href}}">Technical dashboard</a>
   <a href="{{repo_url}}">Source code on GitHub</a>
+  <a href="{{repo_url}}/blob/main/docs/how-it-works.md">How it works, from scratch</a>
   <a href="{{repo_url}}/blob/main/docs/results.md">Full results write-up</a>
   <a href="{{repo_url}}/blob/main/docs/methodology.md">Methodology</a>
   <a href="{{repo_url}}/blob/main/docs/biases.md">Known biases</a>

@@ -85,6 +85,8 @@ ignore = [
 # Prose templates: the research note is mostly long English strings, and
 # wrapping them at 100 columns fragments sentences for no benefit.
 "scripts/make_research_note.py" = ["E501"]
+# Same reason: the guide's stylesheet is a CSS string.
+"scripts/make_guide.py" = ["E501"]
 
 [tool.mypy]
 python_version = "3.10"

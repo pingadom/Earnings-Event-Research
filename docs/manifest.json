@@ -9,9 +9,9 @@
       "sklearn": "1.8.0",
       "matplotlib": "3.10.9"
     },
-    "git_commit": "492cbf6138ae911c83b4f2401b51cba19e666944",
+    "git_commit": "7f6e67070176ec963393c233c89ae52324d5a614",
     "git_dirty": true,
-    "generated_at_utc": "2026-08-20T14:16:45+00:00"
+    "generated_at_utc": "2026-08-20T16:09:08+00:00"
   },
   "artefacts": {
     "reports/holdout/holdout_by_year.csv": {
@@ -199,8 +199,8 @@
       "bytes": 34673
     },
     "docs/results.md": {
-      "sha256": "837afa8ebbde41cfcf3914d48d1bc9d80c0776634cfa8bd18db68dc3c71df18c",
-      "bytes": 35760
+      "sha256": "d55373a9a28a9be8dc255d7ef646f3434a0c26982544b43e6da3686c593f5725",
+      "bytes": 39142
     },
     "conf/config.yaml": {
       "sha256": "8ad34db9697c403b62d42fc0f65977310442e07c8f3a0367e8e458dbc42edf2e",
