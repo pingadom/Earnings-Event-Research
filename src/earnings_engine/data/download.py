@@ -432,15 +432,14 @@ def run_acquisition(config: AcquisitionConfig, *, validate_only: bool = False) -
     else:
         available_filings = _existing(filings_path, FILING_COLUMNS)
 
+    text_counts: dict[str, int] | None = None
     if "text" in config.datasets:
+        # Recorded here, reported later: the validation report does not exist
+        # until every dataset has been written. Calling report.add() at this
+        # point worked for a full acquisition, where an earlier branch happened
+        # to have built one, and raised UnboundLocalError for `--text-only`.
         counts = _download_filing_text(available_filings, tickers, config)
-        report.add(
-            "warning" if counts["failed"] else "info",
-            "filing_text",
-            "coverage",
-            f"{counts['downloaded']} downloaded, {counts['cached']} already cached, "
-            f"{counts['failed']} failed of {counts['requested']} earnings releases",
-        )
+        text_counts = counts
         if counts["failed"]:
             failures.append(
                 {
@@ -495,6 +494,14 @@ def run_acquisition(config: AcquisitionConfig, *, validate_only: bool = False) -
     }
     write_json_atomic(manifest, config.raw_dir / "acquisition_manifest.json")
     _frames, report = validate_directory(config.raw_dir)
+    if text_counts is not None:
+        report.add(
+            "warning" if text_counts["failed"] else "info",
+            "filing_text",
+            "coverage",
+            f"{text_counts['downloaded']} downloaded, {text_counts['cached']} already cached, "
+            f"{text_counts['failed']} failed of {text_counts['requested']} earnings releases",
+        )
     for dataset, count in sorted(Counter(item["dataset"] for item in failures).items()):
         report.add(
             "warning",
