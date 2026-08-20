@@ -123,12 +123,18 @@ writes a markdown report, five figures and the intermediate CSVs to
 command gives the same numbers on any machine.
 
 ```
+                             ⚠ SYNTHETIC DATA — NOT RESULTS ⚠
 eee demo                  →  out-of-sample IC 0.19,  net Sharpe  5.3
 eee demo    --drift 0     →  out-of-sample IC 0.02,  net Sharpe  0.2
 
 eee holdout               →  6/6 years positive, mean IC 0.197, net Sharpe 4.82
 eee holdout --drift 0     →  4/6 years positive, mean IC 0.022, net Sharpe 0.37
 ```
+
+**Those are invented markets, not findings.** The first line of each pair has an
+effect deliberately planted in it and the second has none; the pair exists to
+show the pipeline detects the first and not the second. The real result is
+IC 0.067 and a net Sharpe of **−0.30** — see the top of this page.
 
 `eee holdout` also writes a self-contained interactive `dashboard.html` —
 per-year results, calibration, equity curve, dark mode, no dependencies.
