@@ -136,3 +136,62 @@ def test_text_similarity_still_measures_editorial_change():
         ]
     )
     assert prev[1] > prev[2], "a rewritten filing must score less similar than a repeated one"
+
+
+def _refit_similarity(texts):
+    """The obvious implementation: refit a TF-IDF space per document.
+
+    Kept in the tests as the reference the fast path must reproduce.
+    """
+    import numpy as np
+    from sklearn.feature_extraction.text import TfidfVectorizer
+
+    n = len(texts)
+    prev = np.full(n, np.nan)
+    for i in range(1, n):
+        history = [t or "" for t in texts[: i + 1]]
+        matrix = TfidfVectorizer(sublinear_tf=True, min_df=1).fit_transform(history)
+        norms = np.sqrt(matrix.multiply(matrix).sum(axis=1)).A.ravel()
+        denominator = norms[i] * norms[i - 1]
+        if denominator:
+            prev[i] = float(matrix[i].multiply(matrix[i - 1]).sum() / denominator)
+    return prev
+
+
+def test_the_fast_similarity_reproduces_refitting_exactly():
+    """Speed must not have been bought with a different answer.
+
+    Refitting a vectoriser per document took twenty-three minutes of a
+    thirty-minute study. Counting terms once and accumulating the document
+    frequencies is the same arithmetic: a term absent from both documents being
+    compared contributes nothing to their dot product, so restricting the
+    vocabulary to the prefix cannot change the cosine.
+    """
+    import numpy as np
+
+    from earnings_engine.features.text import TextFeatureExtractor
+
+    rng = np.random.default_rng(0)
+    vocabulary = [f"word{i}" for i in range(300)]
+    corpus = [
+        " ".join(rng.choice(vocabulary, size=rng.integers(120, 400)))
+        for _ in range(12)
+    ]
+    fast, _ = TextFeatureExtractor().similarity(corpus)
+    slow = _refit_similarity(corpus)
+    assert fast[1:] == pytest.approx(slow[1:], abs=1e-9)
+
+
+def test_the_fast_similarity_is_actually_fast():
+    import time
+
+    import numpy as np
+
+    from earnings_engine.features.text import TextFeatureExtractor
+
+    rng = np.random.default_rng(1)
+    vocabulary = [f"word{i}" for i in range(4000)]
+    corpus = [" ".join(rng.choice(vocabulary, size=2000)) for _ in range(60)]
+    started = time.perf_counter()
+    TextFeatureExtractor().similarity(corpus)
+    assert time.perf_counter() - started < 5.0

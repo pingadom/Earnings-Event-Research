@@ -9,66 +9,153 @@
     "annualised Sharpe of that specification's stitched holdout backtest, or null",
     "where the run was abandoned before a backtest existed.",
     "",
-    "All figures below are on synthetic data. Replace them wholesale when the study",
-    "is re-run on real data; a trial count from one dataset does not transfer."
+    "Trials 1-8 were evaluated on synthetic data; 9-11 on the real S&P 500 sample.",
+    "They are counted together on purpose. The deflated Sharpe asks how many times a",
+    "researcher looked before reporting, and a look is a look regardless of which",
+    "dataset it was aimed at -- the decisions carried over."
   ],
-  "n_trials": 8,
+  "n_trials": 12,
   "trials": [
     {
       "name": "car_market_model_0_19 target, entry at t0",
       "sharpe_annual": 5.35,
       "notes": "ABANDONED. Booked the announcement gap, which is untradable. Produced a Sharpe above 2 on the null fixture, which is how the bug was found. See ADR 0003.",
-      "params": {"target": "car_market_model_0_19", "entry_offset": 0, "model": "ridge"},
+      "params": {
+        "target": "car_market_model_0_19",
+        "entry_offset": 0,
+        "model": "ridge"
+      },
       "recorded_at": "2026-08-18T12:16:00+00:00"
     },
     {
       "name": "car_market_model_1_20 target, entry at t0+1, weight cap clipped",
       "sharpe_annual": null,
       "notes": "ABANDONED. Clipping weights after sector demeaning left up to 8% net sector exposure, so the book was not actually neutral.",
-      "params": {"target": "car_market_model_1_20", "entry_offset": 1, "cap": "clip"},
+      "params": {
+        "target": "car_market_model_1_20",
+        "entry_offset": 1,
+        "cap": "clip"
+      },
       "recorded_at": "2026-08-18T13:55:00+00:00"
     },
     {
       "name": "car_market_model_1_20, ridge, sector-neutral, rank_gauss, cap scaled",
       "sharpe_annual": 4.82,
       "notes": "CURRENT SPECIFICATION. Stitched across holdout years 2019-2024.",
-      "params": {"target": "car_market_model_1_20", "entry_offset": 1, "model": "ridge", "cap": "scale", "transform": "rank_gauss", "quantiles": 5},
+      "params": {
+        "target": "car_market_model_1_20",
+        "entry_offset": 1,
+        "model": "ridge",
+        "cap": "scale",
+        "transform": "rank_gauss",
+        "quantiles": 5
+      },
       "recorded_at": "2026-08-18T14:10:00+00:00"
     },
     {
       "name": "single-feature baseline: time-series SUE alone",
       "sharpe_annual": null,
       "notes": "Scored every holdout year as the comparison benchmark. Mean IC 0.018.",
-      "params": {"features": ["sue_timeseries"]},
+      "params": {
+        "features": [
+          "sue_timeseries"
+        ]
+      },
       "recorded_at": "2026-08-18T14:10:00+00:00"
     },
     {
       "name": "abnormal return estimator: market_adjusted",
       "sharpe_annual": null,
       "notes": "Computed and reported in the significance grid; not used as the model target.",
-      "params": {"estimator": "market_adjusted"},
+      "params": {
+        "estimator": "market_adjusted"
+      },
       "recorded_at": "2026-08-18T12:16:00+00:00"
     },
     {
       "name": "abnormal return estimator: sector_neutral",
       "sharpe_annual": null,
       "notes": "Computed and reported; used for backtest P&L.",
-      "params": {"estimator": "sector_neutral"},
+      "params": {
+        "estimator": "sector_neutral"
+      },
       "recorded_at": "2026-08-18T12:16:00+00:00"
     },
     {
       "name": "event window [0,4] (5-day)",
       "sharpe_annual": null,
       "notes": "Reported in the significance grid across all three estimators.",
-      "params": {"window": [0, 4]},
+      "params": {
+        "window": [
+          0,
+          4
+        ]
+      },
       "recorded_at": "2026-08-18T12:16:00+00:00"
     },
     {
       "name": "event window [1,5] (5-day tradable drift)",
       "sharpe_annual": null,
       "notes": "Reported; the shorter tradable alternative to [1,20].",
-      "params": {"window": [1, 5]},
+      "params": {
+        "window": [
+          1,
+          5
+        ]
+      },
       "recorded_at": "2026-08-18T14:10:00+00:00"
+    },
+    {
+      "name": "real data, 114 tickers, no text features",
+      "sharpe_annual": -0.61,
+      "notes": "The first real-data run. Reported a significant IC decay trend (-0.023/yr, p=0.033) that did not survive quadrupling the sample. Superseded.",
+      "params": {
+        "target": "car_market_model_1_20",
+        "entry_offset": 1,
+        "model": "ridge",
+        "universe": "114 tickers",
+        "features.text": false
+      },
+      "recorded_at": "2026-08-18T20:11:00+00:00"
+    },
+    {
+      "name": "real data, 466 tickers, no text features, pre-quarterisation-fix",
+      "sharpe_annual": -0.79,
+      "notes": "Universe expanded 4x. Decay trend vanished (+0.006/yr, p=0.61). Fundamentals were still corrupted by double-differenced quarters; see the next row.",
+      "params": {
+        "target": "car_market_model_1_20",
+        "entry_offset": 1,
+        "model": "ridge",
+        "universe": "466 tickers",
+        "features.text": false
+      },
+      "recorded_at": "2026-08-19T00:00:00+00:00"
+    },
+    {
+      "name": "real data, 466 tickers, corrected fundamentals, no text",
+      "sharpe_annual": -0.31,
+      "notes": "Same specification, corrected data: derived quarters no longer double-differenced, quarters mislabelled FY recovered. Mean IC 0.023 -> 0.068. Not a new specification so much as the same one on data that was right.",
+      "params": {
+        "target": "car_market_model_1_20",
+        "entry_offset": 1,
+        "model": "ridge",
+        "universe": "466 tickers",
+        "features.text": false
+      },
+      "recorded_at": "2026-08-20T13:26:00+00:00"
+    },
+    {
+      "name": "real data, 466 tickers, corrected fundamentals, with text features",
+      "sharpe_annual": -0.3,
+      "notes": "HEADLINE. Adds the earnings-release corpus. Mean IC 0.0676 -> 0.0672: the text block carries 41% of the model's coefficient weight and no incremental out-of-sample skill.",
+      "params": {
+        "target": "car_market_model_1_20",
+        "entry_offset": 1,
+        "model": "ridge",
+        "universe": "466 tickers",
+        "features.text": true
+      },
+      "recorded_at": "2026-08-20T13:52:00+00:00"
     }
   ]
 }

@@ -34,69 +34,66 @@ If you want to know what this found without reading a methods section, start
 with the explainer. It is generated from the same run artefacts as everything
 else, so it cannot disagree with them.
 
-**The headline is a null — and the trading numbers are provably uninformative.**
-466 S&P 500 companies, **13,736 real earnings announcements** timestamped from
-SEC filings, held out one year at a time 2019–2024:
+**Earnings fundamentals rank subsequent abnormal returns. Nothing here is
+tradable.** 466 S&P 500 companies, **13,675 real earnings announcements**
+timestamped from SEC filings, plus **23,914 earnings press releases**, held out
+one year at a time 2019–2024:
 
 | | |
 |---|---:|
-| Mean out-of-sample IC | 0.022 (t = 1.30) |
-| Years with positive IC | 4 / 6 |
-| Net Sharpe after costs | −0.79 (t = −1.98) |
-| **Sharpe vs shuffled-prediction null** | **47th percentile, p = 0.53** |
-| Alpha vs FF5 + momentum | −1.67% (t = −2.16) |
-| Deflated Sharpe (8 trials) | 0.03 |
+| Mean out-of-sample IC | **0.067 (t = 3.40)** |
+| Years with positive IC | 5 / 6 |
+| Naive baseline (SUE alone) | −0.047 |
+| Net Sharpe after costs | −0.30 |
+| **Sharpe vs shuffled-prediction null** | **85th percentile, p = 0.16** |
+| Alpha vs FF5 + momentum | −0.91% (t = −1.11) |
+| Deflated Sharpe (12 logged trials) | 0.00 |
 
-The hypothesis is **not supported on this sample**. None of the five
-falsification criteria written down *before* the run is met.
+Two of the five falsification criteria written down *before* the run are met.
+The ranking skill is real; the edge is not. Those are compatible, and holding
+both is the point.
 
-The result worth the reader's time is the third row. A long-short book holding
-twenty-day positions into a binding per-name cap drifts slightly negative on a
-worthless signal, so a negative Sharpe is not automatically evidence of
-anything. Running the identical book on the identical events **200 times with
-the predictions shuffled** puts the realised −0.79 at the *47th percentile* of
-pure noise. The trading result carries no information in either direction, and
-that is measured rather than asserted.
+Three things are worth more than the headline.
 
-**Sorted on earnings surprise, the spread has the wrong sign — and that is an
-artefact worth understanding.** Ranking every announcement by its surprise and
-holding twenty days gives −88bp with t = −3.65: companies that *beat*
-expectations underperform. It accumulates over the twenty days rather than
-appearing on day one, and it is monotonically strongest in the *most* liquid
-names — the opposite of every theory of why drift should exist.
+**A null result can be a data-quality result.** A day before this was written,
+the same code on the same universe reported IC 0.022 at t = 1.30 — a clean null.
+Two bugs in how year-to-date XBRL flows became quarters were suppressing it:
+derived quarters were being differenced a *second* time downstream (6,505 rows),
+and four thousand ninety-day facts were discarded because their filer labelled
+them "FY". Fixing the data, with no change to the model, tripled the information
+coefficient. [§R1](docs/results.md#r1-the-result)
 
-The diagnostic that explains it is now printed beside the table: **the median
-sorting variable is 83 days old at the announcement it is attached to.** An
-earnings release is filed as an 8-K within minutes; the XBRL statements for that
-quarter arrive weeks later in the 10-Q, so the newest fundamentals at any
-announcement describe the *previous* quarter. Every one of those features is
-point-in-time correct — nothing leaks — and none is about the event it is
-attached to. A point-in-time check asks whether a feature was public before the
-trade; it cannot ask whether the feature is *about* the event, and this project
-had only ever asked the first question.
+**Point-in-time correct is not the same as being about the event.** The median
+feature is **83 days old** at the announcement it is attached to, because the
+XBRL statements for the quarter being announced are not filed until the 10-Q
+weeks later. Nothing leaks — the validator is right to pass it — and almost
+nothing is about the release. Sorted on surprise, the spread is −88bp at
+t = −3.65 with the *wrong sign* and strongest in the *most* liquid names; on the
+1,982 events whose statements were filed *with* the announcement it is −59bp at
+t = −1.03. The significant number was an artefact of staleness.
+[§R2](docs/results.md#r2-does-the-drift-exist-at-all-before-any-model-touches-it)
 
-On the 1,982 events whose statements were filed *with* the announcement — the
-subset where the hypothesis can actually be tested — the spread is −59bp at
-t = −1.03, p = 0.59. Nothing. See
-[§R2](docs/results.md#r2-does-the-drift-exist-at-all-before-any-model-touches-it).
+**The language adds nothing.** The text block carries 41% of the model's
+coefficient weight — the change in tone against a firm's own previous release is
+the second-largest coefficient of any feature — and adding it moves
+out-of-sample IC from 0.0676 to 0.0672.
 
-**A previous version of this README reported a significant decay trend
-(−0.023/yr, p = 0.033) as its substantive finding. It did not survive
-quadrupling the sample** — on 466 companies the trend is +0.006/yr, p = 0.61.
-The correction is documented in [§R1](docs/results.md#r1-the-result) rather than
-edited out, because a six-point regression dissolving under more data is the
-most transferable lesson here.
+**An earlier version of this README reported a significant decay trend
+(−0.023/yr, p = 0.033) as its substantive finding.** It did not survive
+quadrupling the sample. Both that correction and the one above are documented
+rather than edited out, because a six-point regression dissolving under more
+data is the most transferable lesson here.
 
-What the factor regression *does* find is that the strategy is a quality-and-value
-portfolio in disguise: significant loadings on HML (t = 2.9), RMW (t = 4.1) and
-CMA (t = 3.5), and against momentum (t = −2.9), R² = 0.17.
+What the factor regression finds is that the strategy is a quality-and-value
+portfolio in disguise: RMW t = 3.6, HML t = 2.6, CMA t = 2.2, SMB t = 2.0, and
+against momentum at t = −3.2, R² = 0.18.
 [§R6](docs/results.md#r6-the-limitations-that-matter) quantifies the bias that
-survived: Yahoo serves no price history for **61% of the index-deleted names**,
+survived: Yahoo serves no price history for **61% of index-deleted names**,
 against 5% of survivors — including SIVB and FRC.
 
 The same pipeline run on synthetic data with a *known* planted effect recovers
 it in 6/6 years at a net Sharpe of 4.8, and finds nothing when nothing is
-planted. That contrast is why the null above is worth believing.
+planted. That contrast is why the result above is worth believing.
 
 ---
 

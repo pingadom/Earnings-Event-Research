@@ -137,7 +137,12 @@ FILINGS = Schema(
         "path": "string",
     },
     required=("ticker", "accession", "form", "filed_at_utc"),
-    unique_on=("accession",),
+    # Not unique on accession alone. A filer with more than one listed share
+    # class -- GOOGL and GOOG, FOXA and FOX -- files a single document under a
+    # single CIK, and it is a separate observation for each ticker because each
+    # class has its own price series. Keying on the accession alone rejected the
+    # whole filings frame, which silently disabled every text feature.
+    unique_on=("ticker", "accession"),
 )
 
 UNIVERSE = Schema(

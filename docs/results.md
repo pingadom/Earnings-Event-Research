@@ -3,9 +3,9 @@
 This document has two parts, and the order matters.
 
 **[Part I](#part-i--the-real-study)** is the study: 466 S&P 500 companies,
-13,736 real earnings announcements timestamped from SEC filings, 2019–2024 held
-out one year at a time. It reports a **null result** — and, unusually, one where
-the trading numbers can be shown to carry no information in *either* direction.
+13,675 real earnings announcements timestamped from SEC filings, 2019–2024 held
+out one year at a time, with both the financial statements and the text of the
+earnings releases.
 
 **[Part II](#part-ii--validating-the-machinery-on-synthetic-data)** is why you
 should believe Part I. The same pipeline is run on a synthetic market with a
@@ -13,13 +13,13 @@ known planted effect, and on one with no effect at all. It finds the first and
 not the second. Without that, a null result is indistinguishable from a broken
 pipeline.
 
-> **This document previously reported a statistically significant decay trend
-> (−0.023 IC per year, p = 0.033) as its substantive finding. It did not survive
-> quadrupling the sample.** On 466 companies rather than 114 the trend is
-> +0.006 per year with p = 0.61 — no trend at all. That correction is left
-> visible rather than quietly edited out, because it is the most useful thing in
-> here: a six-point regression found a pattern that more data dissolved, which
-> is exactly how a small-sample artefact behaves. §R1 has the detail.
+> **Two earlier conclusions in this document did not survive.** A statistically
+> significant decay trend (−0.023 IC/year, p = 0.033) dissolved when the sample
+> was quadrupled. And a null on ranking skill (IC 0.022, t = 1.30) turned out to
+> be substantially a *data* result: two bugs in how year-to-date XBRL flows were
+> turned into quarters were suppressing the signal, and fixing them tripled the
+> information coefficient to 0.067 at t = 3.40. Both corrections are left visible
+> rather than edited out. §R1 and §R2 have the detail.
 
 ---
 
@@ -30,79 +30,87 @@ pipeline.
 | | |
 |---|---|
 | Universe | Every S&P 500 member 2014–2024 for which a free price source and SEC XBRL facts could both be obtained: **466 companies**. Membership is point-in-time, so a company is present for the years it was actually in the index. |
-| Events | **13,736** earnings announcements, from **SEC 8-K Item 2.02** filings |
+| Events | **13,675** earnings announcements, from **SEC 8-K Item 2.02** filings |
 | Timing | **100% declared** — every event carries a minute-level EDGAR acceptance timestamp. None assumed. |
-| Prices | Yahoo daily adjusted close, 2014-01 → 2024-12 |
+| Prices | Yahoo daily adjusted close, 2014-01 → 2024-12, screened for a $5 price and $1m median dollar volume |
 | Fundamentals | SEC XBRL company facts, first-reported values only, year-to-date flows differenced into discrete quarters |
+| Text | **23,914 earnings press releases** — exhibit 99.1 of each Item 2.02 8-K — scored for tone, uncertainty and change in language |
 | Factors | Ken French daily FF5 + momentum |
 | Held out | 2019, 2020, 2021, 2022, 2023, 2024 — trained through Y−1, frozen, predicted Y |
 
-The BMO/AMC split derived from those timestamps is consistent with the published
-distribution, which is a reassuring sign the timestamps are being read correctly.
-
 ## R1. The result
 
-| Year | Train n | Test n | IC | IC t | Predicted (bp) | Realised (bp) | Calib. | Net Sharpe |
-|---:|---:|---:|---:|---:|---:|---:|---:|---:|
-| 2019 | 4,916 | 1,356 | −0.035 | −0.83 | 174 | −48 | −0.23 | −3.62 |
-| 2020 | 6,271 | 1,408 | 0.052 | 1.42 | 127 | 212 | 1.38 | 0.35 |
-| 2021 | 7,679 | 1,448 | 0.046 | 0.81 | 213 | 173 | 0.87 | −0.66 |
-| 2022 | 9,125 | 1,489 | 0.046 | 1.30 | 212 | 204 | 1.04 | 1.54 |
-| 2023 | 10,616 | 1,535 | −0.029 | −0.98 | 229 | −12 | −0.09 | −1.57 |
-| 2024 | 12,147 | 1,565 | 0.055 | 2.21 | 179 | −48 | −0.21 | −2.08 |
+| Year | Test n | IC | IC t | Predicted (bp) | Realised (bp) | Calib. | Net Sharpe |
+|---:|---:|---:|---:|---:|---:|---:|---:|
+| 2019 | 1,348 | 0.039 | 1.50 | 180 | 26 | 0.10 | −2.80 |
+| 2020 | 1,399 | 0.123 | 5.67 | 155 | 268 | 1.56 | 1.26 |
+| 2021 | 1,448 | 0.061 | 0.86 | 243 | 210 | 0.86 | −0.43 |
+| 2022 | 1,489 | 0.115 | 2.89 | 237 | 161 | 0.90 | 1.18 |
+| 2023 | 1,534 | −0.007 | −0.31 | 250 | −46 | −0.13 | −2.08 |
+| 2024 | 1,562 | 0.072 | 1.34 | 205 | 67 | 0.24 | −1.27 |
 
-**Aggregate:** 8,801 out-of-sample predictions, mean IC **0.022** (t = **1.30**,
-not significant), 4 of 6 years positive, stitched net Sharpe **−0.79**
-(Newey–West t = **−1.98**), calibration slope **0.46**.
+**Aggregate:** 8,780 out-of-sample predictions, mean IC **0.067** (t = **3.40**),
+5 of 6 years positive, calibration slope **0.59**, stitched net Sharpe **−0.30**.
 
 ![Out-of-sample IC by held-out year](figures/real/holdout_ic.png)
 
-**The hypothesis is not supported on this sample.** Ranking skill is positive on
-average and small enough to be luck.
+The answer splits cleanly in two, and the split is the finding.
 
-Three things are worth more than the headline.
+### There is real ranking skill
 
-**The negative Sharpe ratio means nothing, and that is measurable.** A long-short
-book holding twenty-day positions, rebalanced daily into a per-name cap that
-binds most days, does not return zero on a worthless signal — it drifts slightly
-negative. So the question is not whether −0.79 is below zero but whether it is
-below *what this book does to noise*. Running the identical book on the identical
-events **200 times with the predictions shuffled** within each holdout year
-answers it directly:
+Mean out-of-sample information coefficient of 0.067 at t = 3.40 across six
+frozen years is not noise. The naive baseline — sorting on standardised
+unexpected earnings alone — scores −0.047 over the same events, so the feature
+set is doing the work rather than the sort.
+
+This is a substantially better result than this document reported a day earlier,
+and none of the improvement came from a better model. It came from two bugs in
+the data:
+
+* Derived quarters were being **differenced twice**. Year-to-date XBRL flows are
+  turned into discrete quarters by subtracting the previous cumulative figure,
+  and the derived Q4 inherited the fiscal-period label "FY" from the 10-K it came
+  out of. A downstream adapter recognised that label as an annual flow and
+  subtracted Q1–Q3 from it a second time. Nothing complained, because
+  subtracting three quarters from one quarter still yields a plausible number.
+  6,505 rows were affected.
+* Four thousand quarters were being **thrown away or mislabelled** because their
+  filer tagged a ninety-day fact as "FY" inside a 10-K.
+
+Mean IC went from 0.022 (t = 1.30) to 0.067 (t = 3.40) on identical code. A null
+result that is really a data-quality result is the most ordinary failure in
+applied quantitative work, and it is worth being explicit that this project
+published one for a day.
+
+### It is not tradable
 
 | | |
 |---|---:|
-| Observed net Sharpe | **−0.79** |
-| Shuffled-prediction null | **−0.77 ± 0.40** |
-| Percentile of the null | **47th** |
-| One-sided p | **0.53** |
+| Net Sharpe | **−0.30** |
+| Shuffled-prediction null | **−0.70 ± 0.42** |
+| Percentile of the null | **85th** |
+| One-sided p | **0.159** |
+| Alpha vs FF5 + momentum | **−0.91%** (t = −1.11) |
+| Deflated Sharpe (12 trials) | **0.00** |
 
-The realised result sits in the middle of the distribution the machinery
-produces from pure noise. It is not evidence against the hypothesis; it is not
-evidence of anything. Any study reporting a negative Sharpe as a *finding*
-without this comparison is over-reading its own book, and so was an earlier
-version of this document.
+The book does better than shuffled predictions — 85th percentile — but not
+significantly, and it still loses money. Ranking correctly and sizing correctly
+are different skills, and 2024 shows the gap: the model's third-best year for
+ranking (IC 0.072) is its second-worst for profit, because its calibration slope
+was 0.24. The magnitudes were wrong even where the order was right.
 
-**The decay finding did not replicate.** On 114 companies the annual IC
-regressed on the year gave −0.023 with p = 0.033, and it was reported here as
-the substantive result — with the literature's blessing, since an anomaly
-documented since Ball and Brown (1968) *ought* to decay. On 466 companies the
-same regression gives **+0.006 with p = 0.61**. The good and bad years are
-scattered (−0.035, +0.052, +0.046, +0.046, −0.029, +0.055), not ordered.
+### The language adds nothing
 
-A six-observation regression that finds a trend which vanishes under four times
-the data never had one. The direction of the original error is instructive: it
-agreed with the literature, which is exactly when a small-sample result is least
-likely to be questioned.
+The text block — tone, uncertainty, litigiousness, modal strength, document
+length, and the change in each against the firm's own previous release, plus
+TF-IDF similarity — is present for 100% of events across 23,914 press releases.
 
-**The model is still badly calibrated, and 2024 shows why that matters.** 2024
-has the highest ranking skill in the sample (IC 0.055, t = 2.21) and the second
-worst return (−2.08 Sharpe), because its calibration slope is −0.21: the model
-ordered the companies tolerably and got the magnitudes backwards. Ranking and
-scale are different things, and a book sized on predicted magnitude can lose
-money on a signal that ranks correctly.
+It carries **41% of the model's total coefficient weight**, and the change in
+tone is the second-largest coefficient of any feature. Adding the entire block
+moves out-of-sample information coefficient from 0.0676 to **0.0672**.
 
-![Predicted vs realised](figures/real/predicted_vs_realised.png)
+That is a clean answer to the half of the original question about management
+language: the model leans on it in-sample and gains nothing out-of-sample.
 
 ## R2. Does the drift exist at all, before any model touches it?
 
@@ -200,61 +208,70 @@ itself. The press releases are acquired (§R6); parsing revenue and earnings per
 share out of them would make the surprise measure contemporaneous, and is the
 single highest-value change available to this project.
 
-## R3. Is there alpha? No — and the tilts are larger than they were
+## R3. Is there alpha? No — it is a quality-and-value portfolio
 
 | term | estimate | t | p |
 |---|---:|---:|---:|
-| **alpha (annualised)** | **−1.67%** | **−2.16** | **0.031** |
-| Mkt-RF | −0.007 | −2.54 | 0.011 |
-| SMB | +0.011 | 1.50 | 0.135 |
-| **HML** | **+0.016** | **2.91** | **0.004** |
-| **RMW** | **+0.029** | **4.08** | **0.000** |
-| **CMA** | **+0.039** | **3.54** | **0.000** |
-| **MOM** | **−0.019** | **−2.88** | **0.004** |
+| **alpha (annualised)** | **−0.91%** | **−1.11** | 0.269 |
+| Mkt-RF | −0.005 | −1.21 | 0.226 |
+| **SMB** | **+0.017** | **2.02** | **0.043** |
+| **HML** | **+0.021** | **2.55** | **0.011** |
+| **RMW** | **+0.041** | **3.62** | **0.000** |
+| **CMA** | **+0.031** | **2.15** | **0.031** |
+| **MOM** | **−0.024** | **−3.25** | **0.001** |
 
-R² = 0.169 · appraisal ratio −0.88
+R² = 0.182
 
-Alpha is negative and now nominally significant — but read it against the
-permutation null in R1 before treating that as a finding. The book's mechanical
-drift is in these returns too, and a t-statistic of −2.16 on a quantity whose
-noise distribution is centred below zero is not the same claim it would be
-against a zero-centred null.
+No alpha. What the regression establishes is that the strategy is a factor
+portfolio wearing a costume: it loads on profitability, value, small size and
+conservative investment, and against momentum. Those are compensated factors
+available for a few basis points, and they explain 18% of the variance in the
+returns.
 
-What the regression *does* establish is that the strategy is a factor portfolio
-wearing a costume. It loads significantly on **value (HML)**, **profitability
-(RMW)**, **conservative investment (CMA)** and *against* **momentum**, with an R²
-of 0.17 — up from 0.10 on the smaller sample, because more names make the tilts
-easier to see. Whatever the earnings features are picking up, a large part of it
-is quality-and-value exposure that costs a few basis points to buy directly.
+This is the most useful reframing of the ranking skill in R1. The features are
+year-on-year changes in margins, growth, cash flow and leverage — which is very
+close to a definition of quality — so a model built on them ranking companies
+well, and then loading on RMW at t = 3.6, is one fact rather than two.
 
 ![Factor exposures](figures/real/factor_loadings.png)
 
 ## R4. Multiple testing and a second methodology
 
-Eight specifications are logged in `conf/trials.json`. The deflated Sharpe ratio
-is **0.03**. It does not survive, which is unsurprising given the raw Sharpe is
-negative — and, per R1, indistinguishable from noise.
+Twelve specifications are logged in `conf/trials.json`, including the four
+abandoned ones and the runs on data that later turned out to be wrong. The
+deflated Sharpe ratio is **0.00**. It does not survive, which is what should
+happen to a strategy whose raw Sharpe is negative.
 
 Fama–MacBeth over monthly cross-sections finds **no feature significant at 5%**.
-The portfolio sort and the regression agree, which is the outcome that should
-increase confidence in a null.
+The portfolio sort and the regression agree.
+
+The honest reading of R1 and R4 together: there is measurable ranking skill and
+no evidence of a tradable edge, and those two statements are compatible.
 
 ## R5. What would have made this result look good
 
 Worth being explicit, because each is a decision that was available and refused:
 
-- **Report 2024 only.** IC 0.055, t = 2.21 — the one year that clears a
-  conventional threshold, out of six.
-- **Report the decay.** It was the previous headline, it agreed with the
+- **Report 2020 only.** IC 0.123, t = 5.67, Sharpe 1.26. One year in six clearing
+  a threshold is what a 5% threshold produces from noise.
+- **Report the ranking skill and stop.** Mean IC 0.067 at t = 3.40 is a
+  publishable-sounding sentence. It becomes a much duller one next to a Sharpe of
+  −0.30 at the 85th percentile of shuffled predictions.
+- **Report the decay.** It was an earlier headline here, it agreed with the
   literature, and it was an artefact of 114 companies.
-- **Use `car_[0,19]` instead of `car_[1,20]`.** Booking the announcement gap
-  adds a large untradable return to every event.
-- **Take today's S&P 500 constituents.** See R5 for how much that is worth.
-- **Skip the factor regression.** The HML, RMW and CMA tilts would then read as
-  skill.
-- **Skip the permutation null.** The negative Sharpe would then read as a
-  finding rather than as noise.
-- **Not log the trials.** The deflated Sharpe needs an honest N.
+- **Report the −88bp surprise-sorted spread** (§R2) as evidence of reversal,
+  without noticing that the sorting variable was 83 days old.
+- **Use `car_[0,19]` instead of `car_[1,20]`.** Booking the announcement gap adds
+  a large untradable return to every event.
+- **Take today's S&P 500 constituents.** See R6 for how much that is worth.
+- **Skip the factor regression.** The RMW, HML and CMA tilts would then read as
+  skill rather than as exposure.
+- **Skip the permutation null.** The Sharpe would then be read against zero.
+- **Not log the trials, or log only the successful ones.** The deflated Sharpe
+  needs an honest N, and four of the twelve here are abandoned runs.
+- **Quietly fix the quarterisation bugs and re-publish.** The tripling of the
+  information coefficient in R1 came from data corrections, and saying so is the
+  difference between a result and a story about a model.
 
 ## R6. The limitations that matter
 
@@ -280,37 +297,59 @@ Two further limitations:
   19% → 42%) and recovered two features that had been structurally missing. It
   did not make coverage complete. The model imputes the remainder at the
   cross-sectional median, which weakens it.
-- **Text features are not in this run.** The earnings-release corpus was still
-  downloading when this study was run, so `features.text` is off and the NLP
-  half of the hypothesis remains untested on the full universe. It is switched
-  off explicitly rather than left to return NaN silently — a lesson learned the
-  hard way, since an earlier run had text features joining on a key 8-Ks do not
-  carry, producing a coefficient of exactly zero for every one of them with
-  nothing raised.
+- **The features are a quarter stale, which is the deepest limitation here.**
+  See §R2: the median feature is 83 days old at the announcement it is attached
+  to, because the XBRL statements for the quarter being announced are not filed
+  until the 10-Q weeks later. Everything is point-in-time correct and almost
+  nothing is *about* the event. The ranking skill in R1 is therefore evidence
+  that quarterly fundamentals predict cross-sectional returns, which is a real
+  but different claim from the one the project set out to test. Parsing revenue
+  and earnings per share out of the press releases — which are now acquired —
+  is the single highest-value change available.
 
 ## R7. Reading this honestly
 
 The pre-registered falsification criteria in
 [`methodology.md` §9](methodology.md#9-what-would-falsify-the-result) were
-written before this run. **None of the five is met.** The stated conclusion is
-that the hypothesis is not supported on this sample.
+written before any of this ran. **Two of the five are now met** — the
+information coefficient is significantly positive across cohorts, and it does
+not disappear in the second half of the sample. Three are not: the strategy
+loses money net of costs, has no alpha, and does not survive the deflated Sharpe.
 
-What changed between the 114-company version of this document and this one is
-worth stating in one place, because it is the argument for building a study this
-way rather than reporting the first result you get:
+The stated conclusion is therefore split, and both halves matter:
 
-| | 114 companies | 466 companies |
-|---|---:|---:|
-| Events | 3,323 | 13,736 |
-| Mean IC | 0.024 (t = 1.17) | 0.022 (t = 1.30) |
-| IC trend per year | **−0.023 (p = 0.033)** | **+0.006 (p = 0.61)** |
-| Net Sharpe | −0.61 | −0.79 |
-| Sharpe vs shuffled null | not measured | **47th percentile, p = 0.53** |
+* **Earnings-related fundamentals do rank subsequent abnormal returns**, at
+  mean IC 0.067 with t = 3.40 out of sample over six frozen years.
+* **Nothing here is tradable.** The book returns −0.30 Sharpe, sits at the 85th
+  percentile of its own shuffled-prediction null, produces no alpha against
+  standard factors, and does not survive twelve logged specifications.
 
-The point estimate of skill barely moved. The *story* built on top of it
-collapsed. That is the normal fate of a finding extracted from six annual
-observations, and the reason the primary evidence here is the information
-coefficient and its confidence interval rather than any narrative about decay.
+And the caveat that qualifies the first bullet: the features are a median 83 days
+old at the announcement, so this is a statement about quarterly fundamentals
+rather than about earnings releases (§R2).
+
+### What changed, three times
+
+The reason to build a study this way rather than report the first result you get:
+
+| | 114 tickers | 466 tickers | 466, data fixed | + release text |
+|---|---:|---:|---:|---:|
+| Events | 3,323 | 13,736 | 13,675 | 13,675 |
+| Mean IC | 0.024 | 0.022 | 0.068 | **0.067** |
+| IC t across years | 1.17 | 1.30 | 3.19 | **3.40** |
+| IC trend per year | **−0.023 (p=0.03)** | +0.006 (p=0.61) | −0.006 | −0.005 (p=0.72) |
+| Net Sharpe | −0.61 | −0.79 | −0.31 | **−0.30** |
+| vs shuffled null | — | 47th pct | 85th pct | **85th pct** |
+
+Three lessons, in the order they were learned:
+
+1. **A trend across six annual observations is not a trend.** The decay finding
+   agreed with the literature and dissolved under four times the data.
+2. **A null can be a data-quality result.** Two quarterisation bugs held the
+   information coefficient at 0.022; correcting them, with no model change,
+   tripled it.
+3. **Adding the thing everyone expects to help can do nothing.** The text block
+   takes 41% of the coefficient weight and moves out-of-sample skill by −0.0004.
 
 That is not a failed project. A pipeline that produces a null on real data and a
 clean detection on planted data is working correctly. One that produced a Sharpe

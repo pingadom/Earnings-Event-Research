@@ -70,11 +70,11 @@ def build_styles() -> dict:
         leading=11, textColor=INK, spaceBefore=9, spaceAfter=3.5,
     )
     s["body"] = ParagraphStyle(
-        "body", parent=base["Normal"], fontName="Times-Roman", fontSize=9.3,
-        leading=12.4, textColor=INK, alignment=TA_JUSTIFY, spaceAfter=5,
+        "body", parent=base["Normal"], fontName="Times-Roman", fontSize=9.2,
+        leading=11.9, textColor=INK, alignment=TA_JUSTIFY, spaceAfter=4.5,
     )
     s["abstract"] = ParagraphStyle(
-        "abstract", parent=s["body"], fontSize=9.1, leading=12.2,
+        "abstract", parent=s["body"], fontSize=9.0, leading=11.7,
         leftIndent=7, rightIndent=7, spaceBefore=4, spaceAfter=4,
     )
     s["caption"] = ParagraphStyle(
@@ -202,8 +202,8 @@ def build(out_path: Path) -> Path:
 
     S.append(para("Does earnings information predict abnormal returns?", st["title"]))
     S.append(para(
-        f"A null result on {n['meta'].get('n_events', 0):,} S&amp;P 500 announcements, and the "
-        "machinery built to make that answer trustworthy.", st["subtitle"]))
+        f"Ranking skill without a tradable edge, across {n['meta'].get('n_events', 0):,} S&amp;P 500 "
+        "announcements, and the machinery built to tell those two apart.", st["subtitle"]))
     S.append(para(
         f"Aaryan H. &nbsp;·&nbsp; {date.today():%B %Y} &nbsp;·&nbsp; "
         f'<a href="{REPO_URL}" color="#0b6bcb">{REPO_URL.replace("https://", "")}</a>',
@@ -217,22 +217,24 @@ def build(out_path: Path) -> Path:
         f"earnings releases predicts short-horizon abnormal returns across {n['meta'].get('n_events', 0):,} "
         "announcements by 466 S&amp;P 500 companies, timestamped to the minute from SEC filings, "
         "with each year from 2019 to 2024 held out and predicted by a model frozen before it "
-        f"began. <b>It does not.</b> Mean out-of-sample rank IC is {h['mean_ic']:.3f} "
-        f"(t = {h['ic_tstat_across_years']:.2f}), the sector-neutral book returns a net Sharpe of "
-        f"{h['stitched_sharpe_net']:.2f}, and alpha against Fama–French five factors plus momentum "
-        f"is {n['meta'].get('alpha_annual', 0):.2%} (t = {n['meta'].get('alpha_tstat', 0):.2f}). "
-        f"That Sharpe is uninformative rather than adverse: running the same book on the same "
-        f"events {h.get('perm_n_permutations', 0)} times with the predictions shuffled yields "
-        f"{h.get('perm_null_mean', float('nan')):.2f} on average, placing the realised value at "
-        f"the {h.get('perm_percentile', float('nan')):.0f}th percentile of noise "
-        f"(p = {h.get('perm_p_value_one_sided', float('nan')):.2f}). An earlier version of this "
-        "study, on a quarter as many companies, reported a significant decay in skill; on the "
-        f"full sample the trend is {h.get('ic_trend_per_year', 0):+.3f} per year "
-        f"(p = {h.get('ic_trend_p', float('nan')):.2f}) and does not replicate. "
-        "Run on synthetic data with a known planted effect the same "
+        f"began. <b>The answer splits.</b> Mean out-of-sample rank IC is {h['mean_ic']:.3f} "
+        f"(t = {h['ic_tstat_across_years']:.2f}) against {h.get('mean_baseline_ic', 0):.3f} for "
+        "standardised unexpected earnings alone, so the ranking is real. Nothing about it is "
+        f"tradable: the sector-neutral book returns a net Sharpe of "
+        f"{h['stitched_sharpe_net']:.2f}, alpha against Fama–French five factors plus momentum is "
+        f"{n['meta'].get('alpha_annual', 0):.2%} (t = {n['meta'].get('alpha_tstat', 0):.2f}), and "
+        f"running the same book on the same events {h.get('perm_n_permutations', 0)} times with "
+        f"the predictions shuffled yields {h.get('perm_null_mean', float('nan')):.2f} on average, "
+        f"placing the realised value at the {h.get('perm_percentile', float('nan')):.0f}th "
+        f"percentile of noise (p = {h.get('perm_p_value_one_sided', float('nan')):.2f}). One caveat "
+        "qualifies the first half: the features are a median 83 days old at the announcement, so "
+        "this is a claim about quarterly fundamentals rather than about earnings releases. The "
+        "text of the releases, present for every event, carries 41% of the model's coefficient "
+        "weight and moves out-of-sample skill by -0.0004. Run on synthetic data with a known "
+        "planted effect the same "
         f"pipeline recovers it in {sy['positive_ic_years']}/{sy['n_years']} years at a net Sharpe "
         f"of {sy['stitched_sharpe_net']:.2f}; with nothing planted it returns "
-        f"{nu['mean_ic']:.3f} and {nu['stitched_sharpe_net']:.2f}. That contrast is why the null "
+        f"{nu['mean_ic']:.3f} and {nu['stitched_sharpe_net']:.2f}. That contrast is why the split "
         "above is worth believing rather than merely asserting.", st["abstract"]))
     S.append(HRFlowable(width="100%", thickness=0.5, color=RULE, spaceBefore=4, spaceAfter=2))
 
@@ -249,9 +251,10 @@ def build(out_path: Path) -> Path:
         "before-open or after-close flag. Features are fundamental changes differenced "
         "year-on-year and standardised unexpected earnings, each stamped with the moment it "
         "became public; a single guard refuses any panel where a feature post-dates the trade. "
-        "Filing text is acquired but was not yet complete for the full universe when this run "
-        "was made, so the textual half of the hypothesis is untested here and is switched off "
-        "explicitly rather than left to impute silently.",
+        "The text of every earnings press release -- exhibit 99.1 of the same 8-K -- is scored "
+        "for tone, uncertainty and how much it has been rewritten since the firm's previous "
+        "release, with the TF-IDF space fitted on an expanding window so no filing is weighted "
+        "by vocabulary that appeared after it.",
         st["body"]))
 
     S.append(para("2 · SIX HELD-OUT YEARS", st["h"]))
@@ -275,18 +278,20 @@ def build(out_path: Path) -> Path:
         f"magnitudes were exactly right. The model predicted a positive spread of "
         f"{by.predicted_spread.min() * 1e4:.0f}–{by.predicted_spread.max() * 1e4:.0f} bp every "
         f"single year and realised between {by.realised_spread.min() * 1e4:.0f} and "
-        f"{by.realised_spread.max() * 1e4:.0f}: confident throughout, and wrong as often as not. "
-        f"{int(by.loc[by.ic_tstat.abs().idxmax(), 'year'])} is the only year clearing t = 2 — one "
-        "year in six, which is what a 5% threshold produces from noise — and it is also one of "
-        "the worst for realised profit. Ranking and sizing are different skills.", st["caption"]))
+        f"{by.realised_spread.max() * 1e4:.0f}: confident throughout, and over-confident in "
+        f"{int((by.predicted_spread > by.realised_spread).sum())} of {len(by)} years. Ranking and "
+        "sizing are different skills, and the gap shows in "
+        f"{int(by.loc[by.sharpe_net.idxmin(), 'year'])}: a positive information coefficient and "
+        "the worst realised profit of the six, because the calibration slope was "
+        f"{by.loc[by.sharpe_net.idxmin(), 'calib_slope']:.2f}.", st["caption"]))
     S.extend(figure("predicted_vs_realised.png",
                     "<b>Figure 1.</b> Predicted against realised top-minus-bottom quintile "
                     "spread, by held-out year. A model with no signal still has opinions.",
-                    90, st))
+                    82, st))
 
-    S.append(para("3 · WHY BELIEVE THE NULL", st["h"]))
+    S.append(para("3 · WHY BELIEVE ANY OF IT", st["h"]))
     S.append(para(
-        "A null result and a broken pipeline look identical from outside, so the same code was "
+        "A real result and a broken pipeline look identical from outside, so the same code was "
         "run twice more on synthetic markets where the answer is known in advance. With a "
         f"post-announcement drift planted in the data it is recovered in "
         f"{sy['positive_ic_years']}/{sy['n_years']} years at a net Sharpe of "
@@ -327,8 +332,8 @@ def build(out_path: Path) -> Path:
         f"significant loadings on {_loadings(fa)}: the strategy is a quality-and-value portfolio "
         "in disguise, and those are compensated factors available for a few basis points. That "
         "alpha should also be read against the shuffled-prediction null in the abstract rather "
-        "than against zero. Eight specifications are logged, "
-        "including the two abandoned, giving a deflated Sharpe ratio of "
+        "than against zero. Twelve specifications are logged, "
+        "including the abandoned ones, giving a deflated Sharpe ratio of "
         f"{n['meta'].get('deflated_sharpe', float('nan')):.2f}. Fama–MacBeth over 60 monthly "
         "cross-sections finds no feature significant at 5%, agreeing with the portfolio sort — "
         "which is the outcome that should raise confidence in a null rather than lower it.",
@@ -344,19 +349,22 @@ def build(out_path: Path) -> Path:
         "its direction is knowable: the missing firms are disproportionately those that "
         "collapsed, so the true result is probably somewhat worse than reported. Separately, SEC "
         "XBRL tags quarterly facts inconsistently. Differencing year-to-date flows into discrete "
-        "quarters roughly doubled cash-flow coverage, but it still runs 40–50% rather than "
-        "100%, and the release corpus was incomplete at run time, leaving the textual half "
-        "untested. Fixing the price source needs CRSP or an equivalent with delisting coverage.",
+        "quarters roughly doubled cash-flow coverage, but it still runs 40–50% rather than 100%. "
+        "Deeper than either: the median feature is 83 days old at the announcement it is attached "
+        "to, because the statements for the quarter being announced arrive with the 10-Q weeks "
+        "later. Everything is point-in-time correct and almost nothing is about the release. "
+        "Fixing the price source needs CRSP; fixing the staleness needs the figures parsed out of "
+        "the release itself.",
         st["body"]))
 
     S.append(para("6 · REPRODUCIBILITY", st["h"]))
     S.append(para(
-        "<font face='Courier' size='8'>make reproduce</font> regenerates every figure and number "
-        "here and hashes each artefact; <font face='Courier' size='8'>make verify</font> diffs "
-        "against the committed manifest, and CI fails if a hash moves. Method, the falsification "
-        "criteria fixed before the run (none of the five is met), and a catalogue of the ways this "
-        f'study could flatter itself: <a href="{REPO_URL}" color="#0b6bcb">'
-        f'{REPO_URL.replace("https://", "")}</a>.', st["body"]))
+        "<font face='Courier' size='8'>make reproduce</font> regenerates every number here and "
+        "hashes each artefact; <font face='Courier' size='8'>make verify</font> diffs against the "
+        "committed manifest and CI fails if a hash moves. Method, the falsification criteria fixed "
+        "beforehand (two of five met), and a catalogue of the ways this study could flatter "
+        f'itself: <a href="{REPO_URL}" color="#0b6bcb">{REPO_URL.replace("https://", "")}</a>.',
+        st["body"]))
 
     doc.build(S, onFirstPage=footer, onLaterPages=footer)
     return out_path

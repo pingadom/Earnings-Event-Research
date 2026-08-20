@@ -96,3 +96,26 @@ def test_predictions_are_all_out_of_sample(planted, null):
         positions = run["bt"].positions
         assert not positions.empty
         assert pd.api.types.is_datetime64_any_dtype(positions["t0"])
+
+
+def test_a_filing_belongs_to_every_share_class_that_lists_it():
+    """One 8-K, one CIK, two tickers, two observations.
+
+    Keying the filings frame on the accession alone rejected the whole frame
+    for any universe containing a dual-class filer -- which silently disabled
+    every text feature, since the pipeline catches the provider error and
+    carries on without them.
+    """
+    from earnings_engine.utils.frames import FILINGS
+
+    frame = pd.DataFrame(
+        {
+            "ticker": ["GOOGL", "GOOG"],
+            "accession": ["0001652044-20-000008"] * 2,
+            "form": ["8-K"] * 2,
+            "filed_at_utc": pd.to_datetime(["2020-02-03 21:05"] * 2, utc=True),
+            "period_end": pd.to_datetime(["2019-12-31"] * 2),
+            "path": ["a.txt.gz", "a.txt.gz"],
+        }
+    )
+    assert len(FILINGS.validate(frame)) == 2

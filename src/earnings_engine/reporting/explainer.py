@@ -139,6 +139,15 @@ def _verdicts(aggregate: dict, metadata: dict) -> list[Verdict]:
     ]
 
 
+def _significance_note(t_stat: float | None) -> str:
+    """One line under the t-statistic tile, on the correct side of the threshold."""
+    if t_stat is None or pd.isna(t_stat):
+        return "A measure of how likely the result is to be luck."
+    if abs(t_stat) >= 2:
+        return "You need roughly 2 before a result is unlikely to be chance. This clears it."
+    return "You need roughly 2 before a result is unlikely to be chance. This is below it."
+
+
 def _trend_caption(trend: float | None, p_value: float | None) -> str:
     """Describe the shape of the year-by-year bars, whatever shape they are."""
     if trend is None or p_value is None or pd.isna(trend) or pd.isna(p_value):
@@ -186,31 +195,62 @@ def _trend_paragraph(trend: float | None, p_value: float | None) -> str:
 
 
 def _answer(aggregate: dict, metadata: dict, verdicts: list[Verdict]) -> str:
-    """The two-sentence verdict, assembled from what the run actually found."""
+    """The verdict, assembled from what the run found rather than written once.
+
+    This paragraph is the first thing anyone reads, so it is the one most likely
+    to go stale. It was written when the study reported a null; a later run
+    tripled the information coefficient and the sentence "well inside what luck
+    produces" was still sitting above a t-statistic of 3.4. Every clause here is
+    now conditional on a number.
+    """
     passed = sum(1 for v in verdicts if v.passed)
     percentile = aggregate.get("perm_percentile")
-    ic = aggregate.get("mean_ic")
-    t_stat = aggregate.get("ic_tstat_across_years")
-    if passed >= 4:
+    ic = aggregate.get("mean_ic") or 0.0
+    t_stat = aggregate.get("ic_tstat_across_years") or 0.0
+    baseline = aggregate.get("mean_baseline_ic")
+
+    ranks = abs(t_stat) >= 2 and ic > 0
+    if ranks and passed >= 4:
         headline = "The short answer: yes, and it survives the checks."
+    elif ranks:
+        headline = "The short answer: it ranks, but it does not pay."
     elif passed >= 2:
         headline = "The short answer: partly, and not enough to trade."
     else:
         headline = "The short answer: no."
-    body = (
-        f"Ranking companies by the model's prediction beat chance by a whisker on average "
-        f"&mdash; a correlation of {_num(ic, 3)} where zero is no skill &mdash; but with a "
-        f"t-statistic of {_num(t_stat)} that is well inside what luck produces. "
-    )
+
+    if ranks:
+        body = (
+            f"The model really does sort companies better than chance: a correlation of "
+            f"{_num(ic, 3)} between its prediction and what actually happened, with a "
+            f"t-statistic of {_num(t_stat)}. Anything above about 2 is unlikely to be luck, "
+            "so this part is a real result. "
+        )
+        if baseline is not None and not pd.isna(baseline) and baseline < 0:
+            body += (
+                "The obvious shortcut — just ranking companies by how much they beat "
+                f"expectations — scores {_num(baseline, 3)} over the same announcements, so the "
+                "work is being done by the detail in the accounts rather than by the headline "
+                "number. "
+            )
+    else:
+        body = (
+            f"Ranking companies by the model's prediction beat chance by a whisker on average "
+            f"— a correlation of {_num(ic, 3)} where zero is no skill — but with a t-statistic "
+            f"of {_num(t_stat)} that is well inside what luck produces. "
+        )
+
     if percentile is not None and not pd.isna(percentile):
         body += (
-            "The trading results say nothing either way, and that is a measured claim rather "
-            f"than a hedge: shuffling the predictions at random reproduces them, putting the "
-            f"real result at the {percentile:.0f}th percentile of pure noise."
+            "Turning that into money is a different matter, and here the answer is no. "
+            f"Shuffling the predictions at random reproduces the trading results, which puts "
+            f"the real ones at the {percentile:.0f}th percentile of pure noise — a measured "
+            "claim rather than a hedge."
         )
     else:
         body += "The trading results are negative after costs."
     return f"<p><strong>{headline}</strong> {body}</p>"
+
 
 
 def _bar_path(x: float, y: float, width: float, height: float, positive: bool) -> str:
@@ -491,6 +531,7 @@ def build_explainer(
         "trend_caption": _trend_caption(trend, trend_p),
         "trend_paragraph": _trend_paragraph(trend, trend_p),
         "answer": _answer(aggregate, metadata, verdicts),
+        "ic_t_note": _significance_note(aggregate.get("ic_tstat_across_years")),
         "perm_mean": _num(aggregate.get("perm_null_mean")),
         "perm_pct": _num(aggregate.get("perm_percentile"), 0),
         "perm_p": _num(aggregate.get("perm_p_value_one_sided"), 3),
@@ -740,8 +781,7 @@ your own trading.</span></li>
     <div class="note">Average correlation between prediction and outcome. Zero is no skill;
     0.03&ndash;0.05 is a genuinely useful signal in this field.</div></div>
   <div class="tile"><div class="label">Is that real?</div><div class="value">t = {{ic_t}}</div>
-    <div class="note">You need roughly 2 before a result is unlikely to be chance. This is
-    below it.</div></div>
+    <div class="note">{{ic_t_note}}</div></div>
   <div class="tile"><div class="label">Consistency</div><div class="value">{{positive_years}}/{{n_years}}</div>
     <div class="note">Holdout years where the model ranked better than chance.</div></div>
   <div class="tile"><div class="label">After costs</div><div class="value">{{sharpe}}</div>

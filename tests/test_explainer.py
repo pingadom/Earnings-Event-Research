@@ -129,3 +129,37 @@ def test_the_page_does_not_describe_analysis_that_did_not_run(tmp_path):
     assert "not in this run" in off and "not in this run" not in on
     assert "Half the question is untested" in off
     assert "Half the question is untested" not in on
+
+
+def test_the_verdict_follows_the_numbers_not_a_template(tmp_path):
+    """The paragraph everyone reads first is the one most likely to go stale.
+
+    It was written when this study reported a null. A later run tripled the
+    information coefficient and left "well inside what luck produces" sitting
+    above a t-statistic of 3.4.
+    """
+    (tmp_path / "y.csv").write_text(BY_YEAR.to_csv(index=False), encoding="utf-8")
+
+    def page_for(mean_ic, t_stat):
+        summary = json.loads(json.dumps(SUMMARY))
+        summary["aggregate"]["mean_ic"] = mean_ic
+        summary["aggregate"]["ic_tstat_across_years"] = t_stat
+        summary["aggregate"]["mean_baseline_ic"] = -0.047
+        summary["aggregate"]["perm_percentile"] = 85.0
+        path = tmp_path / f"s{t_stat}.json"
+        path.write_text(json.dumps(summary), encoding="utf-8")
+        return build_explainer(
+            path, tmp_path / "y.csv", tmp_path / f"out{t_stat}.html"
+        ).read_text()
+
+    weak = page_for(0.022, 1.30)
+    assert "well inside what luck produces" in weak
+    assert "This is below it." in weak
+
+    strong = page_for(0.067, 3.40)
+    assert "well inside what luck produces" not in strong
+    assert "really does sort companies better than chance" in strong
+    assert "This clears it." in strong
+    # And it must still say the trading does not work.
+    assert "85th percentile of pure noise" in strong
+    assert "it ranks, but it does not pay" in strong
