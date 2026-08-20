@@ -200,6 +200,55 @@ announcement — the subset on which the stated hypothesis can actually be teste
 Nothing. The significant reversal was a property of sorting on a quarter-old
 measure, not of earnings announcements.
 
+### The attempt to fix it, and why it is not used
+
+The obvious remedy is to read the figures out of the release itself, which is
+public at the announcement. `eee parse-releases` does exactly that, and
+`docs/results.md` reports the attempt rather than the intention because the
+attempt did not clear the bar.
+
+A press release is written for humans and every issuer writes a different one.
+The same number appears as "diluted earnings per share of $1.22", "diluted EPS
+was $1.22", "net income per diluted share, continuing operations, of $0.10", and
+as a bare column in a table. Four failure modes matter more than coverage, and
+each was found by measurement rather than by inspection:
+
+* **Adjusted figures.** Almost every release quotes a GAAP number and an
+  "adjusted", "non-GAAP", "core" or — genuinely — "Economic EPS" one, and the
+  adjusted number is usually larger and more prominent.
+* **Comparatives.** "diluted loss per share of $0.47 in the fourth quarter of
+  fiscal 2009" is last year's number, and nothing *before* the amount says so.
+* **Guidance.** "Raises Earnings Estimate to $2.34 Per Diluted Share" is not a
+  result.
+* **Tables and dates.** "Diluted Loss Per Share from Discontinued Operations
+  0.00 0.00" is two columns, and "the quarter ended March 27, 2010" was once
+  read as twenty-seven dollars a share.
+
+The point of the exercise is that none of this is asserted. Every extracted
+figure is compared against the same quarter's XBRL once the 10-Q arrives weeks
+later, which is an independent measurement of how often the parser is right:
+
+| | |
+|---|---:|
+| Releases with a figure extracted | **14,637 / 24,033 (60.9%)** |
+| Of those, checkable against XBRL | 12,199 |
+| Match to the cent | **65.0%** |
+| Agree on sign | 86.6% |
+| Median absolute error | **0.000** |
+
+Where two independent phrasings in the same document agree on a value — the
+title and a bullet, say — accuracy rises to **76.5%** across 4,869 releases,
+with 93.2% sign agreement. The confidence signal is well calibrated and
+monotone, which is itself evidence the approach can work.
+
+**It is still not good enough, so it is not used.** A surprise measure built on
+a figure that is wrong a quarter of the time injects more noise than the
+staleness it removes. The parser ships as measured infrastructure with its
+accuracy published, and the study continues to use XBRL and to state plainly
+that XBRL is stale. Closing the remaining gap is a data problem — a vendor
+earnings feed, or the 8-K's own XBRL exhibit where issuers file one — rather
+than a matter of writing better regular expressions.
+
 **This changes what the null in R1 means.** The model was largely being fed the
 previous quarter's numbers, so R1 is not yet a clean test of the hypothesis
 either. It is now a null with a known cause rather than an unknown one, and the

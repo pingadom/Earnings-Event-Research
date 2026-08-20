@@ -84,6 +84,14 @@ def build_parser() -> argparse.ArgumentParser:
     drift.add_argument("--subsamples", type=int, default=3, help="liquidity groups to split into")
     drift.add_argument("--boot", type=int, default=2000, help="cluster bootstrap draws")
 
+    releases = sub.add_parser(
+        "parse-releases",
+        help="extract earnings per share from the press releases and measure the parser",
+    )
+    _add_common(releases)
+    releases.add_argument("--raw-dir", default="data/raw")
+    releases.add_argument("--limit", type=int, default=None, help="stop after N releases")
+
     research = sub.add_parser("research", help="full pipeline: features, model, backtest")
     _add_common(research)
     research.add_argument("--provider", default="synthetic")
@@ -159,6 +167,8 @@ def main(argv: list[str] | None = None) -> int:
         return _vendor_check(args, cfg)
     if args.command == "demo":
         return _demo(args, cfg)
+    if args.command == "parse-releases":
+        return _parse_releases(args, cfg)
     if args.command == "drift":
         return _drift(args, cfg)
     if args.command == "holdout":
@@ -696,6 +706,56 @@ def _drift(args, cfg) -> int:
     for name, body in sections.items():
         print(f"\n## {name}\n{body}")
     print(f"\nreport -> {report}")
+    return 0
+
+
+def _parse_releases(args, cfg) -> int:
+    """Extract the headline earnings figure from every release, and score it.
+
+    The extraction is not the deliverable; the accuracy report is. A regular
+    expression over prose written by thousands of different people is worth
+    exactly what it can be shown to be worth, and the 10-Q that follows each
+    release weeks later provides an independent check on every figure.
+    """
+
+    from .data.filing_text import is_earnings_release
+    from .data.release_validation import parse_releases, validate_against_xbrl
+    from .data.storage import read_table, table_path
+    from .pipeline import save_stage
+
+    raw = Path(args.raw_dir)
+    out = Path(args.out)
+    out.mkdir(parents=True, exist_ok=True)
+
+    filings = read_table(table_path(raw / "sec_filings.parquet"))
+    releases = filings.loc[
+        filings["form"].isin(["8-K", "8-K/A"]) & filings["items"].map(is_earnings_release)
+    ]
+    if args.limit:
+        releases = releases.head(args.limit)
+    log.info("parsing %d earnings release(s)", len(releases))
+
+    parsed = parse_releases(releases, raw / "sec_filing_text")
+    fundamentals = read_table(table_path(raw / "fundamentals.parquet"))
+    merged, report = validate_against_xbrl(parsed, releases, fundamentals)
+
+    save_stage(merged, out, "release_eps")
+    accuracy = (
+        merged.loc[merged["eps_xbrl"].notna()]
+        .assign(exact=lambda d: d["error"].abs() <= 0.005)
+        .groupby("agreement")["exact"]
+        .agg(["mean", "size"])
+        .reset_index()
+        .rename(columns={"mean": "share_exact", "size": "n"})
+    )
+    save_stage(accuracy, out, "release_eps_accuracy")
+
+    print()
+    print(report.render())
+    print()
+    print("Agreement between independent phrasings, against the share that match XBRL:")
+    print(accuracy.round(3).to_markdown(index=False))
+    print(f"\nwrote {out / 'release_eps.csv'}")
     return 0
 
 
