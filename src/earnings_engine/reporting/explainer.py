@@ -70,6 +70,65 @@ anything the accounts do not is still open.</p>
 """
 
 
+#: Headline figures from the real-data study, quoted by the synthetic-data
+#: banner so a reader who lands on a demonstration run is told what the actual
+#: answer was in the same breath. These are the only hand-copied numbers on the
+#: page: everything else is read out of the run that produced it. They come
+#: from docs/results.md and must be updated with it.
+REAL_STUDY = {
+    "ic": "0.067",
+    "ic_t": "3.40",
+    "net_sharpe": "-0.30",
+    "perm_percentile": "85th",
+    "source": "docs/results.md",
+}
+
+
+def _synthetic_banner(metadata: dict) -> str:
+    """The warning that this page is a demonstration, not a finding.
+
+    `eee holdout` defaults to the synthetic provider, and the Pages workflow
+    calls it with no data of its own -- so the published landing page is built
+    from invented markets with a drift coefficient deliberately planted in
+    them. Every number on it is then a measurement of the machinery, and a
+    reader has no way of knowing that from the prose, which is written in the
+    voice of a study reporting what it found.
+
+    It went out that way. The site spent a week telling anyone who read it that
+    a correlation of 0.197 with a t-statistic of 18 was "a real result". For a
+    project whose entire argument is that numbers like those mean you have a
+    bug, that is the worst available thing to get wrong, and it is exactly the
+    error already corrected once in the README -- which is why the banner is
+    generated here, above the answer, rather than trusted to prose further
+    down where it can be skimmed past.
+    """
+    if metadata.get("provider") != "synthetic":
+        return ""
+    planted = metadata.get("synthetic_drift")
+    effect = (
+        "with no effect planted in it at all -- the null control, which should find nothing"
+        if planted == 0
+        else "with a drift effect deliberately planted in it"
+    )
+    return (
+        '<div class="demo-banner">'
+        "<strong>This page is a demonstration, not a result.</strong> "
+        f"It was generated from <em>invented</em> price and earnings data {effect}. "
+        "The figures below measure whether the machinery recovers an effect that was "
+        "put there on purpose. They are not findings about any real company, and a "
+        "number like a t-statistic of 18 is the planted signal being found, not skill."
+        "<br><br>"
+        "The real study, on actual S&amp;P 500 announcements, found something much "
+        f"smaller: a mean information coefficient of <strong>{REAL_STUDY['ic']}</strong> "
+        f"(t = {REAL_STUDY['ic_t']}) — genuine ranking skill — and a net Sharpe ratio of "
+        f"<strong>{REAL_STUDY['net_sharpe']}</strong>, which is the "
+        f"{REAL_STUDY['perm_percentile']} percentile of a shuffled-prediction null and "
+        "therefore better than noise but not significantly so, and still a loss. "
+        f"Those numbers are in <code>{REAL_STUDY['source']}</code>."
+        "</div>"
+    )
+
+
 def _e(value: object) -> str:
     return html.escape(str(value), quote=True)
 
@@ -219,7 +278,24 @@ def _answer(aggregate: dict, metadata: dict, verdicts: list[Verdict]) -> str:
     else:
         headline = "The short answer: no."
 
-    if ranks:
+    # On invented data the sentence above is a statement about the plumbing, and
+    # it reads as a statement about markets. Say which it is, in the sentence
+    # itself, because the banner above can be scrolled past.
+    if metadata.get("provider") == "synthetic":
+        headline = headline.replace(
+            "The short answer:", "On invented data, the short answer is:"
+        )
+
+    synthetic = metadata.get("provider") == "synthetic"
+    if ranks and synthetic:
+        body = (
+            f"The machinery recovers the effect that was planted for it to find: a "
+            f"correlation of {_num(ic, 3)} between prediction and outcome, with a "
+            f"t-statistic of {_num(t_stat)}. On real markets a t-statistic that size would "
+            "mean a bug rather than a discovery; here it means the pipeline works end to "
+            "end, which is all this run is testing. "
+        )
+    elif ranks:
         body = (
             f"The model really does sort companies better than chance: a correlation of "
             f"{_num(ic, 3)} between its prediction and what actually happened, with a "
@@ -538,6 +614,12 @@ def build_explainer(
         "perm_n": aggregate.get("perm_n_permutations", 0),
         "perm_excess": _num(aggregate.get("perm_excess_over_null")),
         "n_events": f"{int(metadata.get('n_events', 0)):,}",
+        "synthetic_banner": _synthetic_banner(metadata),
+        "universe_label": (
+            f"{int(metadata.get('n_tickers', 0))} invented companies"
+            if metadata.get("provider") == "synthetic"
+            else "S&amp;P 500"
+        ),
         "n_years": aggregate.get("n_years", 0),
         "years": aggregate.get("years", ""),
         "n_predictions": f"{int(aggregate.get('n_predictions', 0)):,}",
@@ -706,6 +788,16 @@ _TEMPLATE = r"""<!doctype html>
     font-family:system-ui,sans-serif; font-size:13px; color:var(--muted);
   }
   .jargon { border-bottom:1px dotted var(--muted); cursor:help; }
+  /* Deliberately loud. This is the one block on the page a reader must not
+     skim past, and it sits above the answer for the same reason. */
+  .demo-banner {
+    margin:0 0 26px; padding:18px 20px; border-radius:8px;
+    border:2px solid #b45309; border-left-width:8px;
+    background:rgba(180,83,9,0.10); color:var(--ink);
+    font-family:system-ui,sans-serif; font-size:15px; line-height:1.55;
+  }
+  .demo-banner strong { color:#b45309; }
+  .demo-banner code { font-size:13px; }
   @media (max-width:640px) { h1 { font-size:27px; } .lede { font-size:18px; } body { font-size:16px; } }
   @media print { body { background:#fff; } .links { display:none; } }
 </style>
@@ -714,11 +806,12 @@ _TEMPLATE = r"""<!doctype html>
 <div class="wrap">
 
 <h1>Does an earnings report tell you where the share price goes next?</h1>
+{{synthetic_banner}}
 <p class="lede">Four times a year, every large company publishes its results. Prices move
 immediately. The interesting question is what happens over the <em>following weeks</em> — and
 whether the contents of the report predict it. This is a study that tried to find out, and
 reported what it found rather than what would have been nicer to find.</p>
-<p class="byline">{{n_events}} earnings announcements &middot; S&amp;P 500 &middot;
+<p class="byline">{{n_events}} earnings announcements &middot; {{universe_label}} &middot;
 {{start}} to {{end}} &middot; {{n_years}} years of out-of-sample testing</p>
 
 <div class="answer">

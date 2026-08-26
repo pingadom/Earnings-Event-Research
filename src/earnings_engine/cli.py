@@ -384,6 +384,11 @@ def _holdout(args, cfg) -> int:
 
     metadata = {
         "label": label,
+        # Recorded explicitly rather than sniffed out of `label` downstream:
+        # the explainer needs to know whether it is describing invented data,
+        # and that question is too important to answer by string matching.
+        "provider": args.provider,
+        "synthetic_drift": args.drift if args.provider == "synthetic" else None,
         "holdout_years": years,
         "target": result.target,
         "model": cfg.model.kind,

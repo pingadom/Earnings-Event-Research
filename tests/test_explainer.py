@@ -163,3 +163,71 @@ def test_the_verdict_follows_the_numbers_not_a_template(tmp_path):
     # And it must still say the trading does not work.
     assert "85th percentile of pure noise" in strong
     assert "it ranks, but it does not pay" in strong
+
+
+BANNER_DIV = '<div class="demo-banner">'
+
+
+def _page_for_provider(tmp_path, provider, *, drift=None, mean_ic=0.197, t_stat=18.15):
+    summary = json.loads(json.dumps(SUMMARY))
+    summary["metadata"]["provider"] = provider
+    summary["metadata"]["synthetic_drift"] = drift
+    summary["metadata"]["n_tickers"] = 150
+    summary["aggregate"]["mean_ic"] = mean_ic
+    summary["aggregate"]["ic_tstat_across_years"] = t_stat
+    path = tmp_path / f"s_{provider}_{drift}.json"
+    path.write_text(json.dumps(summary), encoding="utf-8")
+    BY_YEAR.to_csv(tmp_path / "y.csv", index=False)
+    return build_explainer(
+        path, tmp_path / "y.csv", tmp_path / f"out_{provider}_{drift}.html"
+    ).read_text(encoding="utf-8")
+
+
+def test_a_synthetic_run_says_so_above_the_answer(tmp_path):
+    """The published site is built from synthetic data by default.
+
+    `eee holdout` defaults to the synthetic provider and the Pages workflow
+    calls it with no data of its own, so the landing page is generated from
+    invented markets with an effect planted in them. It went out for a week
+    reading as though it were the study's findings.
+    """
+    page = _page_for_provider(tmp_path, "synthetic", drift=None)
+    # The stylesheet carries the rule unconditionally, so the div is what
+    # tells you the banner actually rendered.
+    assert BANNER_DIV in page
+    assert "This page is a demonstration, not a result." in page
+    # Above the answer, not below it: a caveat under the verdict is a caveat
+    # nobody reads.
+    assert page.index(BANNER_DIV) < page.index('<div class="answer">')
+
+
+def test_the_banner_carries_the_real_studys_numbers(tmp_path):
+    from earnings_engine.reporting.explainer import REAL_STUDY
+
+    page = _page_for_provider(tmp_path, "synthetic", drift=None)
+    assert REAL_STUDY["ic"] in page
+    assert REAL_STUDY["net_sharpe"] in page
+    assert REAL_STUDY["source"] in page
+
+
+def test_a_synthetic_run_never_claims_a_real_result(tmp_path):
+    page = _page_for_provider(tmp_path, "synthetic", drift=None)
+    assert "so this part is a real result" not in page
+    assert "On invented data, the short answer is:" in page
+    assert "planted for it to find" in page
+    # And it must not claim an index it never touched.
+    assert "150 invented companies" in page
+
+
+def test_the_null_control_is_described_as_such(tmp_path):
+    page = _page_for_provider(tmp_path, "synthetic", drift=0)
+    assert "no effect planted in it at all" in page
+
+
+def test_a_real_run_carries_no_banner_and_names_the_index(tmp_path):
+    page = _page_for_provider(tmp_path, "local", mean_ic=0.067, t_stat=3.40)
+    assert BANNER_DIV not in page
+    assert "This page is a demonstration" not in page
+    assert "invented" not in page
+    assert "S&amp;P 500" in page
+    assert "really does sort companies better than chance" in page
