@@ -47,6 +47,7 @@ class Dataset:
     prices: pd.DataFrame
     events: pd.DataFrame
     fundamentals: pd.DataFrame | None = None
+    consensus: pd.DataFrame | None = None
     filings: pd.DataFrame | None = None
     text_loader: object | None = None
     panel: ReturnPanel | None = None
@@ -61,6 +62,7 @@ def build_dataset(
     tickers: list[str] | None = None,
     with_fundamentals: bool = True,
     with_filings: bool = True,
+    with_consensus: bool = True,
 ) -> Dataset:
     """Pull and align everything from a provider (or bundle of providers)."""
     universe = _universe_from(provider, tickers, config)
@@ -79,6 +81,19 @@ def build_dataset(
             fundamentals = provider.get_fundamentals(tickers, start, end)
         except Exception as exc:
             log.warning("fundamentals unavailable: %s", exc)
+
+    # Analyst consensus is optional and only some providers carry it: the free
+    # stack cannot produce it at all, which is why the time-series SUE is the
+    # default rather than the fallback. Absence is logged at info, not warning
+    # -- it is the normal case, not a fault.
+    consensus = None
+    if with_consensus and hasattr(provider, "get_consensus"):
+        try:
+            consensus = provider.get_consensus(tickers, start, end)
+            log.info("consensus: %d row(s) for %d ticker(s)", len(consensus),
+                     consensus["ticker"].nunique() if len(consensus) else 0)
+        except Exception as exc:
+            log.info("consensus unavailable, using time-series SUE only: %s", exc)
 
     filings = None
     text_loader = None
@@ -100,6 +115,7 @@ def build_dataset(
         prices=prices,
         events=aligned,
         fundamentals=fundamentals,
+        consensus=consensus,
         filings=filings,
         text_loader=text_loader,
         panel=panel,
@@ -108,6 +124,7 @@ def build_dataset(
             "end": end,
             "n_tickers": len(tickers),
             "n_events": int(len(aligned)),
+            "n_consensus": int(len(consensus)) if consensus is not None else 0,
             "static_universe": universe.static_membership,
         },
     )
@@ -175,7 +192,7 @@ def build_feature_panel(
         wide = _pivot(dataset.fundamentals)
         blocks["fund"] = build_fundamental_features(dataset.fundamentals)
         if config.features.surprise:
-            blocks["sue"] = build_surprise_features(wide)
+            blocks["sue"] = build_surprise_features(wide, consensus=dataset.consensus)
     if dataset.filings is not None and dataset.text_loader is not None and config.features.text:
         blocks["text"] = build_text_features(
             dataset.filings, dataset.text_loader, config.features.lm_dictionary_path

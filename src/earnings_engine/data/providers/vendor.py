@@ -12,6 +12,7 @@ Layout expected::
       prices/          any number of .csv/.xlsx exports
       events/
       fundamentals/
+      consensus/
       filings/
       universe/
 
@@ -31,6 +32,21 @@ ways out, in order of preference:
 2. failing that, set ``available_from_policy="filing_lag"`` below, which stamps
    each period with a conservative assumed disclosure lag and records that the
    data is restated so the caveat survives into the write-up.
+
+The as-of trap (consensus)
+--------------------------
+The same failure has a sharper edge for analyst estimates. Capital IQ's
+``IQ_EPS_EST`` returns the consensus *as it stands today* unless you pass an
+``asOfDate``. Pull it without one and every historical period is stamped with a
+forecast formed after the fact -- often years after, and after the actual was
+known. That is look-ahead of the most damaging kind, and it is invisible in the
+output: the numbers look like perfectly ordinary estimates.
+
+So a consensus export must carry its own as-of date, and this adapter refuses
+to load one that does not. Downstream, :func:`~earnings_engine.features.
+surprise.build_surprise_features` takes the later of the snapshot stamp and the
+reported figure's stamp, and warns when a snapshot post-dates the figure it is
+supposed to be forecasting.
 """
 
 from __future__ import annotations
@@ -40,19 +56,28 @@ from pathlib import Path
 
 import pandas as pd
 
-from ...utils.frames import EVENTS, FILINGS, FUNDAMENTALS, PRICES, UNIVERSE, Schema
+from ...utils.frames import (
+    CONSENSUS,
+    EVENTS,
+    FILINGS,
+    FUNDAMENTALS,
+    PRICES,
+    UNIVERSE,
+    Schema,
+)
 from ...utils.logging_utils import get_logger
 from ..base import ProviderError
 from ..registry import register
 
 log = get_logger(__name__)
 
-DATASETS = ("prices", "events", "fundamentals", "filings", "universe")
+DATASETS = ("prices", "events", "fundamentals", "consensus", "filings", "universe")
 
 _SCHEMAS: dict[str, Schema] = {
     "prices": PRICES,
     "events": EVENTS,
     "fundamentals": FUNDAMENTALS,
+    "consensus": CONSENSUS,
     "filings": FILINGS,
     "universe": UNIVERSE,
 }
@@ -65,6 +90,7 @@ class ColumnMap:
     prices: dict[str, str] = field(default_factory=dict)
     events: dict[str, str] = field(default_factory=dict)
     fundamentals: dict[str, str] = field(default_factory=dict)
+    consensus: dict[str, str] = field(default_factory=dict)
     filings: dict[str, str] = field(default_factory=dict)
     universe: dict[str, str] = field(default_factory=dict)
 
@@ -98,6 +124,19 @@ CAPITALIQ_MAP = ColumnMap(
         "Item": "item",
         "Value": "value",
     },
+    consensus={
+        "Ticker": "ticker",
+        "IQ_PERIODDATE": "period_end",
+        "Period End": "period_end",
+        # The asOfDate handed to IQ_EPS_EST. Without it the pull is worthless.
+        "As Of Date": "available_from_utc",
+        "IQ_EPS_EST": "consensus_eps",
+        "Consensus EPS": "consensus_eps",
+        "IQ_EPS_EST_STDDEV": "consensus_std",
+        "Estimate StdDev": "consensus_std",
+        "IQ_EPS_NUM_EST": "n_estimates",
+        "Num Estimates": "n_estimates",
+    },
     universe={
         "Ticker": "ticker",
         "IQ_INDEX_START": "start_date",
@@ -130,6 +169,17 @@ LSEG_MAP = ColumnMap(
         "Original Announcement Date": "available_from_utc",
         "Field": "item",
         "Value": "value",
+    },
+    consensus={
+        "Instrument": "ticker",
+        "Period End Date": "period_end",
+        # I/B/E/S summary files are snapshots with a statistical period date;
+        # that date is the as-of stamp and it must be exported.
+        "Estimate Date": "available_from_utc",
+        "As Of Date": "available_from_utc",
+        "Mean Estimate": "consensus_eps",
+        "Standard Deviation": "consensus_std",
+        "Number of Estimates": "n_estimates",
     },
     universe={
         "Instrument": "ticker",
@@ -252,10 +302,12 @@ class VendorExportProvider:
         mapping = self.column_map.for_dataset(dataset)
         lower = {str(c).strip().lower(): c for c in df.columns}
         rename: dict[str, str] = {}
+        claimed: set[str] = set()
         for vendor_col, canon in mapping.items():
             key = vendor_col.strip().lower()
-            if key in lower:
+            if key in lower and canon not in claimed:
                 rename[lower[key]] = canon
+                claimed.add(canon)
         # Allow already-canonical headers to pass through untouched.
         out = df.rename(columns=rename)
         expected = set(_SCHEMAS[dataset].columns)
@@ -275,6 +327,8 @@ class VendorExportProvider:
             df = self._process_events(df)
         if dataset == "fundamentals":
             df = self._process_fundamentals(df)
+        if dataset == "consensus":
+            df = self._process_consensus(df)
         if dataset == "universe" and "end_date" in df.columns:
             df["end_date"] = pd.to_datetime(df["end_date"], errors="coerce").fillna(
                 pd.Timestamp("2100-01-01")
@@ -342,6 +396,69 @@ class VendorExportProvider:
             df["item"] = df["item"].astype(str).str.strip().str.lower().str.replace(" ", "_")
         return df
 
+    def _process_consensus(self, df: pd.DataFrame) -> pd.DataFrame:
+        """Normalise a consensus export, refusing one that cannot be dated.
+
+        There is no ``filing_lag`` style fallback here on purpose. A missing
+        first-disclosure date on fundamentals costs you accuracy; a missing
+        as-of date on a consensus costs you the entire result, because the
+        default an estimates screen hands back is *today's* consensus, formed
+        after the actual was known. There is no conservative lag that repairs
+        that, so the load fails and says why.
+        """
+        df["period_end"] = pd.to_datetime(df["period_end"], errors="coerce")
+        if "available_from_utc" not in df.columns:
+            raise ProviderError(
+                "consensus export carries no as-of date. Capital IQ's IQ_EPS_EST "
+                "returns the consensus as it stands TODAY unless asOfDate is "
+                "supplied, so an undated export is look-ahead, not data. Re-run "
+                "the pull with the as-of column (see docs/capiq-pull-"
+                "specification.xlsx, sheet '1 Consensus pull', column F)."
+            )
+        stamp = pd.to_datetime(df["available_from_utc"], errors="coerce")
+        if isinstance(stamp.dtype, pd.DatetimeTZDtype):
+            df["available_from_utc"] = stamp.dt.tz_convert("UTC")
+        else:
+            # A snapshot "as of date D" was fully formed by the end of D, so
+            # stamp the end of that session. Late is the safe direction: the
+            # point-in-time gate admits a feature only when its stamp precedes
+            # the trade, and an over-early stamp would wave through a forecast
+            # that was not yet observable.
+            df["available_from_utc"] = (
+                (stamp.dt.normalize() + pd.Timedelta(hours=23, minutes=59))
+                .dt.tz_localize(self.exchange_tz, ambiguous=True, nonexistent="shift_forward")
+                .dt.tz_convert("UTC")
+            )
+        for col in ("consensus_eps", "consensus_std", "n_estimates"):
+            if col not in df.columns:
+                df[col] = pd.NA
+
+        # Blank rows are ordinary -- a small-cap quarter nobody covered -- and
+        # should thin the sample, not fail the load.
+        blank = df["consensus_eps"].isna() | df["available_from_utc"].isna()
+        if int(blank.sum()):
+            log.info(
+                "consensus: dropped %d/%d row(s) with no estimate or no as-of date",
+                int(blank.sum()),
+                len(df),
+            )
+            df = df.loc[~blank]
+
+        dup = df.duplicated(subset=["ticker", "period_end"], keep=False)
+        if bool(dup.any()):
+            log.warning(
+                "consensus: %d row(s) carry more than one snapshot per (ticker, period); "
+                "keeping the EARLIEST as-of date. Which snapshot is correct depends on "
+                "the event being predicted, so collapsing here can only be done in the "
+                "safe direction -- if you meant to supply a snapshot history, the pull "
+                "should return one row per announcement instead.",
+                int(dup.sum()),
+            )
+            df = df.sort_values("available_from_utc").drop_duplicates(
+                subset=["ticker", "period_end"], keep="first"
+            )
+        return df.reset_index(drop=True)
+
     @staticmethod
     def _synthesise_id(df: pd.DataFrame, dataset: str) -> pd.Series:
         if dataset == "events":
@@ -360,6 +477,9 @@ class VendorExportProvider:
 
     def get_fundamentals(self, tickers, start, end) -> pd.DataFrame:
         return _slice(self.load("fundamentals"), tickers, start, end, "period_end")
+
+    def get_consensus(self, tickers, start, end) -> pd.DataFrame:
+        return _slice(self.load("consensus"), tickers, start, end, "period_end")
 
     def get_filings(self, tickers, start, end) -> pd.DataFrame:
         return _slice(self.load("filings"), tickers, start, end, "filed_at_utc", tz=True)

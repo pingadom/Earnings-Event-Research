@@ -95,6 +95,85 @@ def test_surprise_expectation_uses_only_past_quarters(fundamentals):
     np.testing.assert_allclose(a[both].to_numpy(), b[both].to_numpy(), rtol=1e-9)
 
 
+def _consensus_for(wide, offset_days, *, std=0.05):
+    """A one-row-per-quarter consensus stamped `offset_days` from period end."""
+    keys = wide[["ticker", "period_end"]].drop_duplicates()
+    stamp = keys["period_end"] + pd.Timedelta(days=offset_days)
+    return pd.DataFrame(
+        {
+            "ticker": keys["ticker"].to_numpy(),
+            "period_end": keys["period_end"].to_numpy(),
+            "available_from_utc": stamp.dt.tz_localize("UTC").to_numpy(),
+            "consensus_eps": np.full(len(keys), 1.0),
+            "consensus_std": np.full(len(keys), std),
+            "n_estimates": np.full(len(keys), 12),
+        }
+    )
+
+
+def test_consensus_snapshot_cannot_backdate_a_row(fundamentals):
+    """A row carrying a late snapshot must become available late, not early.
+
+    This is the as-of trap. An estimates screen queried without an as-of date
+    returns today's consensus for every historical period; if the joined row
+    kept the reported figure's stamp, that post-hoc forecast would be admitted
+    as though it had been on the tape before the print.
+    """
+    from earnings_engine.features.fundamentals import _pivot
+    from earnings_engine.features.surprise import build_surprise_features
+
+    wide = _pivot(fundamentals).sort_values(["ticker", "period_end"])
+    baseline = build_surprise_features(wide).set_index(["ticker", "period_end"])
+
+    # Snapshots dated a year past period end -- long after every figure.
+    late = build_surprise_features(wide, consensus=_consensus_for(wide, 365)).set_index(
+        ["ticker", "period_end"]
+    )
+
+    matched = late["consensus_eps"].notna()
+    assert int(matched.sum()) > 50, "consensus did not match enough rows to be meaningful"
+    common = matched[matched].index
+    assert (late.loc[common, "available_from_utc"] > baseline.loc[common, "available_from_utc"]).all()
+    assert late.loc[common, "_consensus_stale"].all()
+
+
+def test_an_unmatched_consensus_leaves_the_figure_stamp_alone(fundamentals):
+    """Taking the later of two stamps must not blank rows that matched nothing."""
+    from earnings_engine.features.fundamentals import _pivot
+    from earnings_engine.features.surprise import build_surprise_features
+
+    wide = _pivot(fundamentals).sort_values(["ticker", "period_end"])
+    consensus = _consensus_for(wide, 365).head(3)
+    out = build_surprise_features(wide, consensus=consensus)
+
+    assert out["available_from_utc"].notna().all()
+    unmatched = out["consensus_eps"].isna()
+    assert int(unmatched.sum()) > 0, "expected most rows to find no consensus"
+    baseline = build_surprise_features(wide)
+    pd.testing.assert_series_equal(
+        out.loc[unmatched, "available_from_utc"].reset_index(drop=True),
+        baseline.loc[unmatched, "available_from_utc"].reset_index(drop=True),
+        check_names=False,
+    )
+
+
+def test_a_late_consensus_snapshot_is_reported_not_swallowed(fundamentals, caplog):
+    """The warning is the finding: a silent late snapshot is the failure mode."""
+    from earnings_engine.features.fundamentals import _pivot
+    from earnings_engine.features.surprise import build_surprise_features
+
+    wide = _pivot(fundamentals).sort_values(["ticker", "period_end"])
+    with caplog.at_level("WARNING"):
+        build_surprise_features(wide, consensus=_consensus_for(wide, 365))
+    assert "dated AFTER the figure" in caplog.text
+
+    caplog.clear()
+    # Stamped before period end, so no snapshot can post-date its figure.
+    with caplog.at_level("WARNING"):
+        build_surprise_features(wide, consensus=_consensus_for(wide, -10))
+    assert "dated AFTER the figure" not in caplog.text
+
+
 def test_text_similarity_cannot_see_later_filings():
     """A future document must not change a similarity computed before it.
 

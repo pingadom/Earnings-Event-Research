@@ -167,6 +167,77 @@ def test_vendor_provider_reads_a_drop_folder(tmp_path):
     assert df["adj_close"].iloc[1] == 102.0
 
 
+def test_vendor_provider_reads_a_consensus_export(tmp_path):
+    from earnings_engine.data.providers.vendor import CapitalIQProvider
+
+    folder = tmp_path / "consensus"
+    folder.mkdir(parents=True)
+    pd.DataFrame(
+        {
+            "Ticker": ["AAPL", "MSFT"],
+            "IQ_PERIODDATE": ["2024-03-31", "2024-03-31"],
+            "As Of Date": ["2024-04-30", "2024-04-24"],
+            "IQ_EPS_EST": [1.50, 2.80],
+            "IQ_EPS_EST_STDDEV": [0.04, 0.06],
+            "IQ_EPS_NUM_EST": [28, 34],
+        }
+    ).to_csv(folder / "c.csv", index=False)
+
+    df = CapitalIQProvider(vendor_dir=tmp_path).load("consensus")
+    assert list(df["ticker"]) == ["AAPL", "MSFT"]
+    assert df["consensus_eps"].iloc[0] == 1.50
+    assert int(df["n_estimates"].iloc[1]) == 34
+    # Stamped at the end of the as-of session, not its midnight.
+    assert df["available_from_utc"].dt.date.astype(str).iloc[0] == "2024-05-01"
+
+
+def test_a_consensus_export_without_an_as_of_date_is_refused(tmp_path):
+    """The default an estimates screen returns is TODAY's consensus.
+
+    There is no conservative lag that repairs an undated consensus, so this
+    must fail the load rather than degrade quietly the way fundamentals do.
+    """
+    from earnings_engine.data.base import ProviderError
+    from earnings_engine.data.providers.vendor import CapitalIQProvider
+
+    folder = tmp_path / "consensus"
+    folder.mkdir(parents=True)
+    pd.DataFrame(
+        {
+            "Ticker": ["AAPL"],
+            "IQ_PERIODDATE": ["2024-03-31"],
+            "IQ_EPS_EST": [1.50],
+            "IQ_EPS_EST_STDDEV": [0.04],
+        }
+    ).to_csv(folder / "c.csv", index=False)
+
+    with pytest.raises(ProviderError, match="as-of date"):
+        CapitalIQProvider(vendor_dir=tmp_path).load("consensus")
+
+
+def test_duplicate_consensus_snapshots_collapse_to_the_earliest(tmp_path, caplog):
+    from earnings_engine.data.providers.vendor import CapitalIQProvider
+
+    folder = tmp_path / "consensus"
+    folder.mkdir(parents=True)
+    pd.DataFrame(
+        {
+            "Ticker": ["AAPL", "AAPL"],
+            "IQ_PERIODDATE": ["2024-03-31", "2024-03-31"],
+            "As Of Date": ["2024-04-24", "2024-06-30"],
+            "IQ_EPS_EST": [1.50, 1.62],
+            "IQ_EPS_EST_STDDEV": [0.04, 0.01],
+            "IQ_EPS_NUM_EST": [28, 30],
+        }
+    ).to_csv(folder / "c.csv", index=False)
+
+    with caplog.at_level("WARNING"):
+        df = CapitalIQProvider(vendor_dir=tmp_path).load("consensus")
+    assert len(df) == 1
+    assert df["consensus_eps"].iloc[0] == 1.50
+    assert "more than one snapshot" in caplog.text
+
+
 def test_vendor_provider_flags_restated_fundamentals(tmp_path, caplog):
     from earnings_engine.data.providers.vendor import CapitalIQProvider
 

@@ -126,6 +126,30 @@ FUNDAMENTALS = Schema(
     unique_on=("ticker", "period_end", "item"),
 )
 
+CONSENSUS = Schema(
+    name="consensus",
+    columns={
+        "ticker": "string",
+        "period_end": "datetime64[ns]",
+        # When this *snapshot of the forecast* was observable -- which is not
+        # period_end and not the announcement. A consensus is a forecast, and
+        # the entire question it answers is what analysts expected *before* the
+        # print. Capital IQ's IQ_EPS_EST returns today's consensus unless an
+        # asOfDate is supplied, so a careless pull stamps a 2019 period with a
+        # number formed years after the fact. This column is what makes that
+        # mistake detectable instead of invisible.
+        "available_from_utc": "datetime64[ns, UTC]",
+        "consensus_eps": "float64",
+        # Cross-sectional dispersion of the individual estimates. It is the
+        # denominator of analyst SUE, so a zero or missing value must produce
+        # NaN rather than an infinite surprise.
+        "consensus_std": "float64",
+        "n_estimates": "Int64",
+    },
+    required=("ticker", "period_end", "available_from_utc", "consensus_eps"),
+    unique_on=("ticker", "period_end"),
+)
+
 FILINGS = Schema(
     name="filings",
     columns={

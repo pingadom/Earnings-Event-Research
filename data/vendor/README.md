@@ -9,6 +9,7 @@ data/vendor/
   prices/          daily OHLCV + adjusted close
   events/          earnings announcement dates AND times
   fundamentals/    long form: one row per (ticker, period, line item)
+  consensus/       analyst EPS estimates, each stamped with its as-of date
   filings/         filing metadata + a path to the document text
   universe/        point-in-time index membership
 ```
@@ -22,6 +23,9 @@ Validate what you have:
 eee vendor-check --provider capitaliq
 eee vendor-check --provider lseg
 ```
+
+`prices` and `events` are required; every other folder reports `--` when empty
+and the pipeline runs without it.
 
 ---
 
@@ -46,6 +50,39 @@ off by a session.
 `IQ_FILINGDATE`. Use the **point-in-time** financials dataset if your licence
 includes it; the standard fields are restated.
 
+**Consensus** — the pull this project cares most about, and the one easiest to
+get wrong.
+
+| Column | Mnemonic |
+|---|---|
+| `Ticker` | — |
+| `Period End` | `IQ_PERIODDATE` |
+| `As Of Date` | **required** — see below |
+| `Consensus EPS` | `IQ_EPS_EST` |
+| `Estimate StdDev` | `IQ_EPS_EST_STDDEV` |
+| `Num Estimates` | `IQ_EPS_NUM_EST` |
+
+`IQ_EPS_EST` returns the consensus **as it stands today** unless you pass an
+`asOfDate`. Pull it without one and every historical quarter gets a forecast
+formed after the actual was known — a forecast that already contains the
+answer. The result is a spectacular backtest and a worthless one.
+
+So the as-of date is not metadata here, it is the data. The adapter **refuses**
+to load a consensus export that has no as-of column, rather than assuming a lag
+the way it does for fundamentals: no lag repairs a number that was computed in
+2026 and labelled 2019.
+
+`docs/capiq-pull-specification.xlsx` (regenerate with `make capiq`) pre-computes
+an as-of date one session before each announcement, one row per event, and
+carries live check formulas that flag a returned period end or actual that
+disagrees with what was expected. Run its pilot batch first.
+
+Downstream, `build_surprise_features` stamps each row with the **later** of the
+snapshot date and the reported figure's date, and warns when snapshots post-date
+the figure they forecast. If that warning fires across a material share of the
+sample, the pull was run without `asOfDate` — fix the pull, do not silence the
+warning.
+
 **Universe** — `IQ_INDEX_CONSTITUENTS` looped over month-ends, collapsed into
 `(ticker, start_date, end_date)` intervals.
 
@@ -63,11 +100,12 @@ export it, because it is exactly the point-in-time stamp this pipeline needs.
 **Fundamentals** — long form with `Field` and `Value`, `Period End Date` and
 `Original Announcement Date`.
 
-**Consensus** — the single most valuable thing this licence gives you.
-Export `ticker, period_end, consensus_eps, consensus_std, n_estimates,
-available_from_utc` into `fundamentals/` as a separate file and pass it to
-`build_surprise_features(consensus=...)` to get analyst-based SUE. The free
-stack cannot produce this at all.
+**Consensus** — the single most valuable thing this licence gives you, and the
+free stack cannot produce it at all. Export `Instrument`, `Period End Date`,
+`Mean Estimate`, `Standard Deviation`, `Number of Estimates` and — the one that
+matters — `Estimate Date`, into `consensus/`. I/B/E/S summary files are already
+dated snapshots, so the as-of trap described under Capital IQ above is easier to
+avoid here; export the statistical period date and it is avoided outright.
 
 **Universe** — `Index Join Date` / `Index Leave Date` from Datastream's
 constituent lists.
