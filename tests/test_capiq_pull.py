@@ -125,6 +125,11 @@ def test_delisted_names_are_the_universe_minus_the_price_store():
 
 
 def test_the_workbook_wires_the_as_of_column_into_every_estimate_formula(sample_events, tmp_path):
+    # Rendering the workbook needs openpyxl, which lives in the optional data
+    # extra. Everything above this line is the part that has to hold anywhere,
+    # so only the rendering check is conditional -- CI installs [dev] alone on
+    # purpose, and a test that quietly requires more turns that into a lie.
+    pytest.importorskip("openpyxl")
     from openpyxl import load_workbook
 
     rows = capiq.assign_batches(capiq.build_pull_rows(sample_events), pilot_tickers=1, batch_size=2)
