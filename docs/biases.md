@@ -87,6 +87,14 @@ coverage. CRSP through a university subscription, or Finaeon. Until then this
 is the limitation that would most change the answer, and it is stated in the
 results rather than left for a reader to discover.
 
+**The fix, itemised.** Capital IQ retains delisted securities, and the licence
+to hand is a Capital IQ one. Sheet 2 of
+[`capiq-pull-specification.xlsx`](capiq-pull-specification.xlsx) (regenerate
+with `make capiq`) lists every universe member the price store does not cover,
+with the window each one needs. That turns "get a better price source" from an
+intention into a request someone can actually run. Until it is run, the number
+above stands.
+
 ---
 
 ## 3. The untradable announcement gap

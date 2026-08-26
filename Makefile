@@ -1,4 +1,4 @@
-.PHONY: help install install-dev lint fmt typecheck test test-cov demo clean
+.PHONY: help install install-dev lint fmt typecheck test test-cov demo capiq clean
 
 help:
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "\033[36m%-16s\033[0m %s\n", $$1, $$2}'
@@ -36,6 +36,9 @@ holdout:          ## Rolling annual holdouts + null control + dashboard
 
 reproduce:        ## Regenerate every published number and fingerprint it
 	python scripts/reproduce.py
+
+capiq:            ## Rebuild the Capital IQ pull workbook (needs data/raw)
+	python scripts/make_capiq_pull.py
 
 note:             ## Rebuild the two-page research note (docs/research-note.pdf)
 	python scripts/make_research_note.py
