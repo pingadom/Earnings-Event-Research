@@ -1,4 +1,19 @@
-"""Polite HTTP client with retries, throttling, and an on-disk response cache."""
+"""Polite HTTP client with retries, throttling, and an on-disk response cache.
+
+``requests`` lives in the optional ``data`` extra, and pyproject says that extra
+is not needed for tests, the demo or CI. That claim was false the moment this
+module imported it at the top: ``data.providers.__init__`` imports every
+provider eagerly so the ``@register`` decorators run, several providers import
+this module for its client, and so the fully offline synthetic path could not
+be imported without a network library it never calls. CI was red on exactly
+that for a week while the same suite passed on developer machines that happened
+to have requests installed.
+
+So the import is deferred to first use. Describing a client costs nothing;
+making a request is what needs the library, and that is where it is now
+demanded -- with a message naming the extra to install rather than a bare
+ModuleNotFoundError from four frames down.
+"""
 
 from __future__ import annotations
 
@@ -8,10 +23,27 @@ import random
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
+from typing import TYPE_CHECKING, Any
 
-import requests
+if TYPE_CHECKING:  # pragma: no cover
+    import requests
 
 log = logging.getLogger(__name__)
+
+
+def _requests() -> Any:
+    """The requests module, imported on use."""
+    try:
+        import requests
+    except ModuleNotFoundError as exc:  # pragma: no cover - depends on install
+        raise ModuleNotFoundError(
+            "network access needs the optional data extra: pip install -e '.[data]'"
+        ) from exc
+    return requests
+
+
+def _new_session() -> Any:
+    return _requests().Session()
 
 
 class DownloadError(RuntimeError):
@@ -28,7 +60,7 @@ class HttpClient:
     timeout: float = 30.0
     retries: int = 4
     backoff: float = 1.0
-    session: requests.Session = field(default_factory=requests.Session)
+    session: requests.Session = field(default_factory=_new_session)
     _last_request: float = field(default=0.0, init=False)
 
     def __post_init__(self) -> None:
@@ -64,7 +96,7 @@ class HttpClient:
                 if response.status_code == 404:
                     raise DownloadError(f"HTTP 404 for {url}")
                 if response.status_code in {429, 500, 502, 503, 504}:
-                    raise requests.HTTPError(
+                    raise _requests().HTTPError(
                         f"retryable HTTP {response.status_code} for {url}", response=response
                     )
                 response.raise_for_status()
@@ -74,7 +106,7 @@ class HttpClient:
                     temporary.write_bytes(content)
                     temporary.replace(cache_path)
                 return content
-            except (requests.RequestException, DownloadError) as exc:
+            except (_requests().RequestException, DownloadError) as exc:
                 last_error = exc
                 if attempt >= self.retries or isinstance(exc, DownloadError):
                     break
