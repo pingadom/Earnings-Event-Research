@@ -123,18 +123,25 @@ def test_consensus_snapshot_cannot_backdate_a_row(fundamentals):
     from earnings_engine.features.surprise import build_surprise_features
 
     wide = _pivot(fundamentals).sort_values(["ticker", "period_end"])
-    baseline = build_surprise_features(wide).set_index(["ticker", "period_end"])
+    baseline = build_surprise_features(wide)
 
     # Snapshots dated a year past period end -- long after every figure.
-    late = build_surprise_features(wide, consensus=_consensus_for(wide, 365)).set_index(
-        ["ticker", "period_end"]
-    )
+    late = build_surprise_features(wide, consensus=_consensus_for(wide, 365))
 
-    matched = late["consensus_eps"].notna()
-    assert int(matched.sum()) > 50, "consensus did not match enough rows to be meaningful"
-    common = matched[matched].index
-    assert (late.loc[common, "available_from_utc"] > baseline.loc[common, "available_from_utc"]).all()
-    assert late.loc[common, "_consensus_stale"].all()
+    # Joined on the keys rather than compared positionally: the two calls are
+    # not obliged to return rows in the same order.
+    merged = late.merge(
+        baseline[["ticker", "period_end", "available_from_utc"]],
+        on=["ticker", "period_end"],
+        suffixes=("", "_baseline"),
+    )
+    matched = merged.loc[merged["consensus_eps"].notna()]
+    assert len(matched) > 50, "consensus did not match enough rows to be meaningful"
+    assert (
+        matched["available_from_utc"].to_numpy()
+        > matched["available_from_utc_baseline"].to_numpy()
+    ).all()
+    assert matched["_consensus_stale"].all()
 
 
 def test_an_unmatched_consensus_leaves_the_figure_stamp_alone(fundamentals):
@@ -147,14 +154,18 @@ def test_an_unmatched_consensus_leaves_the_figure_stamp_alone(fundamentals):
     out = build_surprise_features(wide, consensus=consensus)
 
     assert out["available_from_utc"].notna().all()
-    unmatched = out["consensus_eps"].isna()
-    assert int(unmatched.sum()) > 0, "expected most rows to find no consensus"
     baseline = build_surprise_features(wide)
-    pd.testing.assert_series_equal(
-        out.loc[unmatched, "available_from_utc"].reset_index(drop=True),
-        baseline.loc[unmatched, "available_from_utc"].reset_index(drop=True),
-        check_names=False,
+    merged = out.merge(
+        baseline[["ticker", "period_end", "available_from_utc"]],
+        on=["ticker", "period_end"],
+        suffixes=("", "_baseline"),
     )
+    unmatched = merged.loc[merged["consensus_eps"].isna()]
+    assert len(unmatched) > 0, "expected most rows to find no consensus"
+    assert (
+        unmatched["available_from_utc"].to_numpy()
+        == unmatched["available_from_utc_baseline"].to_numpy()
+    ).all()
 
 
 def test_a_late_consensus_snapshot_is_reported_not_swallowed(fundamentals, caplog):
